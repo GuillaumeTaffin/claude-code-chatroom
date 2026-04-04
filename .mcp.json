@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "chatroom": {
+      "command": "bun",
+      "args": ["./packages/connector/src/index.ts"],
+      "env": {
+        "CHATROOM_URL": "http://localhost:3000"
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "claude-code-chatroom",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "dev": "bun run dev:server & bun run dev:web",
+    "dev:server": "bun run --filter @chatroom/server dev",
+    "dev:web": "bun run --filter @chatroom/web dev",
+    "dev:connector": "bun run --filter @chatroom/connector dev"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
