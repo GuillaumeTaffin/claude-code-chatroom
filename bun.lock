@@ -24,8 +24,30 @@
       "name": "@chatroom/connector",
       "version": "0.0.1",
       "dependencies": {
+        "@chatroom/connector-core": "workspace:*",
         "@chatroom/shared": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.12.0",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+      },
+    },
+    "packages/connector-codex": {
+      "name": "@chatroom/connector-codex",
+      "version": "0.0.1",
+      "dependencies": {
+        "@chatroom/connector-core": "workspace:*",
+        "@modelcontextprotocol/sdk": "^1.12.0",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+      },
+    },
+    "packages/connector-core": {
+      "name": "@chatroom/connector-core",
+      "version": "0.0.1",
+      "dependencies": {
+        "@chatroom/shared": "workspace:*",
       },
       "devDependencies": {
         "bun-types": "latest",
@@ -97,6 +119,10 @@
     "@borewit/text-codec": ["@borewit/text-codec@0.2.2", "", {}, "sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ=="],
 
     "@chatroom/connector": ["@chatroom/connector@workspace:packages/connector"],
+
+    "@chatroom/connector-codex": ["@chatroom/connector-codex@workspace:packages/connector-codex"],
+
+    "@chatroom/connector-core": ["@chatroom/connector-core@workspace:packages/connector-core"],
 
     "@chatroom/server": ["@chatroom/server@workspace:packages/server"],
 

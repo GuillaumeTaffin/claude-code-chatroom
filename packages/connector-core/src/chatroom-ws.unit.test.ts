@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createConnectorSessionState } from './session-state.js'
 import {
   createChatroomWebSocketClient,
+  normalizeChatEvent,
   type ConnectorSocket,
 } from './chatroom-ws.js'
 
@@ -47,6 +48,51 @@ describe('chatroom websocket client', () => {
     vi.useRealTimers()
   })
 
+  it('normalizes known chat notifications', () => {
+    expect(
+      normalizeChatEvent('new_message', {
+        sender: 'alpha',
+        sender_role: 'frontend agent',
+        text: 'hello',
+        mentions: [],
+        timestamp: '2026-04-05T00:00:00.000Z',
+      }),
+    ).toEqual({
+      type: 'message',
+      sender: 'alpha',
+      sender_role: 'frontend agent',
+      text: 'hello',
+      mentions: [],
+      timestamp: '2026-04-05T00:00:00.000Z',
+    })
+
+    expect(
+      normalizeChatEvent('member_joined', {
+        name: 'beta',
+        description: 'backend agent',
+        timestamp: '2026-04-05T00:00:01.000Z',
+      }),
+    ).toEqual({
+      type: 'member_joined',
+      name: 'beta',
+      description: 'backend agent',
+      timestamp: '2026-04-05T00:00:01.000Z',
+    })
+
+    expect(
+      normalizeChatEvent('member_left', {
+        name: 'gamma',
+        timestamp: '2026-04-05T00:00:02.000Z',
+      }),
+    ).toEqual({
+      type: 'member_left',
+      name: 'gamma',
+      timestamp: '2026-04-05T00:00:02.000Z',
+    })
+
+    expect(normalizeChatEvent('unknown', {})).toBeNull()
+  })
+
   it('connects and stores the websocket', async () => {
     const state = createConnectorSessionState()
     const client = createChatroomWebSocketClient({
@@ -54,7 +100,7 @@ describe('chatroom websocket client', () => {
       wsUrl: 'ws://localhost:3000',
       state,
       logger: console,
-      onNotification: vi.fn(),
+      onEvent: vi.fn(),
     })
 
     const connectPromise = client.connect('alpha')
@@ -70,7 +116,7 @@ describe('chatroom websocket client', () => {
       wsUrl: 'ws://localhost:3000',
       state: createConnectorSessionState(),
       logger: console,
-      onNotification: vi.fn(),
+      onEvent: vi.fn(),
     })
 
     const connectPromise = client.connect('alpha')
@@ -86,7 +132,7 @@ describe('chatroom websocket client', () => {
       wsUrl: 'ws://localhost:3000',
       state,
       logger: console,
-      onNotification: vi.fn(),
+      onEvent: vi.fn(),
     })
 
     const connectPromise = client.connect('alpha')
@@ -121,7 +167,7 @@ describe('chatroom websocket client', () => {
       wsUrl: 'ws://localhost:3000',
       state,
       logger: console,
-      onNotification: vi.fn(),
+      onEvent: vi.fn(),
     })
 
     const connectPromise = client.connect('alpha')
@@ -151,7 +197,7 @@ describe('chatroom websocket client', () => {
       state,
       logger: console,
       requestTimeoutMs: 25,
-      onNotification: vi.fn(),
+      onEvent: vi.fn(),
     })
 
     await expect(
@@ -175,15 +221,17 @@ describe('chatroom websocket client', () => {
     await rejection
   })
 
-  it('dispatches server notifications and clears pending requests on close', async () => {
-    const onNotification = vi.fn()
+  it('dispatches normalized chat events and clears pending requests on close', async () => {
+    const onEvent = vi.fn()
+    const onClose = vi.fn()
     const state = createConnectorSessionState()
     const client = createChatroomWebSocketClient({
       WebSocketImpl: MockWebSocket,
       wsUrl: 'ws://localhost:3000',
       state,
       logger: console,
-      onNotification,
+      onEvent,
+      onClose,
     })
 
     const connectPromise = client.connect('alpha')
@@ -199,26 +247,40 @@ describe('chatroom websocket client', () => {
     MockWebSocket.instances[0]?.emitMessage({
       jsonrpc: '2.0',
       method: 'new_message',
-      params: { text: 'hello' },
+      params: {
+        sender: 'beta',
+        sender_role: 'backend agent',
+        text: 'hello',
+        mentions: ['alpha'],
+        timestamp: '2026-04-05T00:00:00.000Z',
+      },
     })
     MockWebSocket.instances[0]?.close()
 
-    expect(onNotification).toHaveBeenCalledWith('new_message', {
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'message',
+      sender: 'beta',
+      sender_role: 'backend agent',
       text: 'hello',
+      mentions: ['alpha'],
+      timestamp: '2026-04-05T00:00:00.000Z',
     })
+    expect(onClose).toHaveBeenCalledWith(
+      new Error('WebSocket connection closed'),
+    )
     await expect(requestPromise).rejects.toThrow('WebSocket connection closed')
     expect(state.wsConnection).toBeNull()
   })
 
-  it('ignores websocket responses without a pending request and non-notification payloads', async () => {
-    const onNotification = vi.fn()
+  it('ignores websocket responses without a pending request and unknown notification payloads', async () => {
+    const onEvent = vi.fn()
     const state = createConnectorSessionState()
     const client = createChatroomWebSocketClient({
       WebSocketImpl: MockWebSocket,
       wsUrl: 'ws://localhost:3000',
       state,
       logger: console,
-      onNotification,
+      onEvent,
     })
 
     const connectPromise = client.connect('alpha')
@@ -237,9 +299,15 @@ describe('chatroom websocket client', () => {
         method: 'ping',
         params: {},
       })
+      MockWebSocket.instances[0]?.emitMessage({
+        jsonrpc: '2.0',
+        method: 'unknown',
+        params: {},
+      })
+      client.close()
     }).not.toThrow()
 
-    expect(onNotification).not.toHaveBeenCalled()
+    expect(onEvent).not.toHaveBeenCalled()
     expect(state.pendingRequests.size).toBe(0)
   })
 
@@ -250,7 +318,7 @@ describe('chatroom websocket client', () => {
       wsUrl: 'ws://localhost:3000',
       state: createConnectorSessionState(),
       logger,
-      onNotification: vi.fn(),
+      onEvent: vi.fn(),
     })
 
     const connectPromise = client.connect('alpha')
@@ -263,5 +331,17 @@ describe('chatroom websocket client', () => {
       '[connector] Failed to parse WS message:',
       expect.anything(),
     )
+  })
+
+  it('closes safely when no websocket has been connected yet', () => {
+    const client = createChatroomWebSocketClient({
+      WebSocketImpl: MockWebSocket,
+      wsUrl: 'ws://localhost:3000',
+      state: createConnectorSessionState(),
+      logger: console,
+      onEvent: vi.fn(),
+    })
+
+    expect(() => client.close()).not.toThrow()
   })
 })

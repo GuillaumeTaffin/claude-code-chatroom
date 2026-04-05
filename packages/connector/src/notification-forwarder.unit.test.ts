@@ -7,12 +7,13 @@ describe('notification forwarder', () => {
 
     await forwardServerNotification(
       { notify, logger: console },
-      'new_message',
       {
+        type: 'message',
         sender: 'alpha',
         sender_role: 'frontend agent',
         text: 'hello',
         mentions: ['beta'],
+        timestamp: '2026-04-05T00:00:00.000Z',
       },
     )
 
@@ -35,18 +36,20 @@ describe('notification forwarder', () => {
 
     await forwardServerNotification(
       { notify, logger: console },
-      'member_joined',
       {
+        type: 'member_joined',
         name: 'alpha',
         description: 'frontend agent',
+        timestamp: '2026-04-05T00:00:01.000Z',
       },
     )
 
     await forwardServerNotification(
       { notify, logger: console },
-      'member_left',
       {
+        type: 'member_left',
         name: 'alpha',
+        timestamp: '2026-04-05T00:00:02.000Z',
       },
     )
 
@@ -83,12 +86,13 @@ describe('notification forwarder', () => {
         notify: vi.fn().mockRejectedValue(new Error('failed')),
         logger,
       },
-      'new_message',
       {
+        type: 'message',
         sender: 'alpha',
         sender_role: 'frontend agent',
         text: 'hello',
         mentions: [],
+        timestamp: '2026-04-05T00:00:00.000Z',
       },
     )
 

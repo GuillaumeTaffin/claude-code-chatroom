@@ -58,10 +58,12 @@ export function handleOpen(ws: ChannelSocket) {
 
   // Broadcast member_joined to all OTHER connected members
   const member = room.getMember(name)!
+  const timestamp = new Date().toISOString()
   const joinNotification = JSON.stringify(
     makeNotification('member_joined', {
       name: member.name,
       description: member.description,
+      timestamp,
     }),
   )
 
@@ -157,8 +159,9 @@ export function handleClose(ws: Pick<ChannelSocket, 'raw'>) {
   const removedName = room.unregisterWebSocket(ws.raw)
   if (removedName) {
     // Broadcast member_left to remaining members
+    const timestamp = new Date().toISOString()
     const leaveNotification = JSON.stringify(
-      makeNotification('member_left', { name: removedName }),
+      makeNotification('member_left', { name: removedName, timestamp }),
     )
     room.broadcastAll(leaveNotification)
 

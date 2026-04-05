@@ -4,11 +4,13 @@ Guidance for coding agents working in this repository.
 
 ## What This Project Is
 
-This is a local chatroom for humans and Claude Code agents.
+This is a local chatroom for humans and coding agents.
 
 - `packages/server` provides the room state, REST endpoints, and WebSocket transport.
 - `packages/web` provides the Svelte UI.
-- `packages/connector` exposes MCP tools so agents can connect and send messages.
+- `packages/connector-core` provides the shared chatroom transport/runtime for agent connectors.
+- `packages/connector` provides the Claude adapter.
+- `packages/connector-codex` provides the Codex adapter.
 - `packages/shared` contains the shared types and JSON-RPC helpers used across the workspace.
 
 ## Tech Stack
