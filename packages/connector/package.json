@@ -4,7 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/index.ts"
+    "dev": "bun --watch src/index.ts",
+    "check:types": "tsc --noEmit -p tsconfig.json",
+    "check:test": "vitest run --config vitest.config.ts",
+    "check:coverage": "vitest run --config vitest.config.ts --coverage",
+    "check:lint": "eslint .",
+    "check:format": "prettier --check . --ignore-path ../../.prettierignore",
+    "check:all": "bun run check:types && bun run check:test && bun run check:coverage && bun run check:lint && bun run check:format"
   },
   "dependencies": {
     "@chatroom/shared": "workspace:*",

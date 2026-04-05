@@ -7,84 +7,75 @@
 		getMembers,
 		isConnected,
 		getMyName,
-	} from '$lib/chatroom.svelte.js';
+	} from '$lib/chatroom.svelte.js'
+	import { getMemberInitial, getNameColor } from '$lib/chatroom-ui.js'
 
-	let joinName = $state('');
-	let joinDescription = $state('');
-	let messageText = $state('');
-	let joinError = $state('');
-	let sendError = $state('');
-	let messagesContainer: HTMLDivElement | undefined = $state();
+	let joinName = $state('')
+	let joinDescription = $state('')
+	let messageText = $state('')
+	let joinError = $state('')
+	let sendError = $state('')
+	let messagesContainer: HTMLDivElement | undefined = $state()
 
-	const messages = $derived(getMessages());
-	const members = $derived(getMembers());
-	const connected = $derived(isConnected());
-	const myName = $derived(getMyName());
+	const messages = $derived(getMessages())
+	const members = $derived(getMembers())
+	const connected = $derived(isConnected())
+	const myName = $derived(getMyName())
 
 	// Auto-scroll when new messages arrive
 	$effect(() => {
 		if (messages.length && messagesContainer) {
 			requestAnimationFrame(() => {
-				messagesContainer!.scrollTop = messagesContainer!.scrollHeight;
-			});
+				messagesContainer!.scrollTop = messagesContainer!.scrollHeight
+			})
 		}
-	});
+	})
 
 	async function handleJoin(e: SubmitEvent) {
-		e.preventDefault();
-		joinError = '';
+		e.preventDefault()
+		joinError = ''
 		try {
-			await connect(joinName.trim(), joinDescription.trim());
+			await connect(joinName.trim(), joinDescription.trim())
 		} catch (err) {
-			joinError = (err as Error).message;
+			joinError = (err as Error).message
 		}
 	}
 
 	async function handleSend(e: SubmitEvent) {
-		e.preventDefault();
-		if (!messageText.trim()) return;
-		sendError = '';
+		e.preventDefault()
+		if (!messageText.trim()) return
+		sendError = ''
 
-		const text = messageText.trim();
-		messageText = '';
+		const text = messageText.trim()
+		messageText = ''
 
 		try {
-			await sendMessage(text);
+			await sendMessage(text)
 		} catch (err) {
-			sendError = (err as Error).message;
+			sendError = (err as Error).message
 		}
 	}
 
 	function handleDisconnect() {
-		disconnect();
+		disconnect()
 	}
 
 	function formatTime(iso: string): string {
-		return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-	}
-
-	// Simple deterministic color from name
-	function nameColor(name: string): string {
-		const colors = [
-			'text-blue-400',
-			'text-emerald-400',
-			'text-amber-400',
-			'text-rose-400',
-			'text-violet-400',
-			'text-cyan-400',
-			'text-orange-400',
-			'text-pink-400',
-		];
-		let hash = 0;
-		for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
-		return colors[Math.abs(hash) % colors.length];
+		return new Date(iso).toLocaleTimeString([], {
+			hour: '2-digit',
+			minute: '2-digit',
+		})
 	}
 </script>
 
 {#if !connected}
 	<!-- Join screen -->
-	<div class="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-100">
-		<div class="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-8 shadow-2xl">
+	<div
+		class="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-100"
+	>
+		<div
+			class="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-8 shadow-2xl"
+		>
 			<h1 class="mb-2 text-2xl font-semibold tracking-tight">Agent Chatroom</h1>
 			<p class="mb-6 text-sm text-zinc-400">
 				Join the chatroom to communicate with agents and humans.
@@ -92,7 +83,9 @@
 
 			<form onsubmit={handleJoin} class="space-y-4">
 				<div>
-					<label for="name" class="mb-1 block text-sm font-medium text-zinc-300">Name</label>
+					<label for="name" class="mb-1 block text-sm font-medium text-zinc-300"
+						>Name</label
+					>
 					<input
 						id="name"
 						type="text"
@@ -134,8 +127,12 @@
 	<!-- Chat UI -->
 	<div class="flex h-screen bg-zinc-950 text-zinc-100">
 		<!-- Sidebar: Members -->
-		<aside class="flex w-64 shrink-0 flex-col border-r border-zinc-800 bg-zinc-900">
-			<div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+		<aside
+			class="flex w-64 shrink-0 flex-col border-r border-zinc-800 bg-zinc-900"
+		>
+			<div
+				class="flex items-center justify-between border-b border-zinc-800 px-4 py-3"
+			>
 				<h2 class="text-sm font-semibold text-zinc-300">Members</h2>
 				<span class="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
 					>{members.length}</span
@@ -143,15 +140,15 @@
 			</div>
 
 			<div class="flex-1 overflow-y-auto p-3 space-y-2">
-				{#each members as member}
+				{#each members as member (member.name)}
 					<div class="rounded-lg bg-zinc-800/50 p-2.5">
 						<div class="flex items-center gap-2">
 							<div
 								class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-xs font-medium"
 							>
-								{member.name[0].toUpperCase()}
+								{getMemberInitial(member.name)}
 							</div>
-							<span class="text-sm font-medium {nameColor(member.name)}"
+							<span class="text-sm font-medium {getNameColor(member.name)}"
 								>{member.name}</span
 							>
 						</div>
@@ -165,7 +162,7 @@
 					<div
 						class="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-medium"
 					>
-						{myName[0]?.toUpperCase() ?? '?'}
+						{getMemberInitial(myName)}
 					</div>
 					<span class="text-sm font-medium">{myName}</span>
 				</div>
@@ -186,8 +183,11 @@
 			</header>
 
 			<!-- Messages -->
-			<div bind:this={messagesContainer} class="flex-1 overflow-y-auto px-6 py-4 space-y-3">
-				{#each messages as msg}
+			<div
+				bind:this={messagesContainer}
+				class="flex-1 overflow-y-auto px-6 py-4 space-y-3"
+			>
+				{#each messages as msg (msg.id)}
 					{#if msg.type === 'system'}
 						<div class="flex items-center gap-3 py-1">
 							<div class="h-px flex-1 bg-zinc-800"></div>
@@ -197,23 +197,29 @@
 					{:else}
 						<div class="group flex items-start gap-3">
 							<div
-								class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-sm font-medium {nameColor(
+								class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-sm font-medium {getNameColor(
 									msg.sender ?? '',
 								)}"
 							>
-								{(msg.sender ?? '?')[0].toUpperCase()}
+								{getMemberInitial(msg.sender)}
 							</div>
 							<div class="min-w-0 flex-1">
 								<div class="flex items-baseline gap-2">
-									<span class="text-sm font-semibold {nameColor(msg.sender ?? '')}"
-										>{msg.sender}</span
+									<span
+										class="text-sm font-semibold {getNameColor(
+											msg.sender ?? '',
+										)}">{msg.sender}</span
 									>
-									<span class="text-xs text-zinc-600">{formatTime(msg.timestamp)}</span>
+									<span class="text-xs text-zinc-600"
+										>{formatTime(msg.timestamp)}</span
+									>
 								</div>
-								<p class="mt-0.5 text-sm text-zinc-300 break-words">{msg.text}</p>
+								<p class="mt-0.5 text-sm text-zinc-300 break-words">
+									{msg.text}
+								</p>
 								{#if msg.mentions.length > 0}
 									<div class="mt-1 flex gap-1">
-										{#each msg.mentions as mention}
+										{#each msg.mentions as mention (mention)}
 											<span
 												class="rounded bg-blue-600/20 px-1.5 py-0.5 text-xs text-blue-400"
 												>@{mention}</span

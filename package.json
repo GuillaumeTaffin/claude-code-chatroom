@@ -1,14 +1,38 @@
 {
   "name": "claude-code-chatroom",
   "private": true,
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "bun run dev:server & bun run dev:web",
     "dev:server": "bun run --filter @chatroom/server dev",
     "dev:web": "bun run --filter @chatroom/web dev",
-    "dev:connector": "bun run --filter @chatroom/connector dev"
+    "dev:connector": "bun run --filter @chatroom/connector dev",
+    "check:shared": "bun run --filter @chatroom/shared check:all",
+    "check:server": "bun run --filter @chatroom/server check:all",
+    "check:connector": "bun run --filter @chatroom/connector check:all",
+    "check:web": "bun run --filter @chatroom/web check:all",
+    "check:types": "bun run --filter @chatroom/shared check:types && bun run --filter @chatroom/server check:types && bun run --filter @chatroom/connector check:types && bun run --filter @chatroom/web check:types",
+    "check:test": "bun run --filter @chatroom/shared check:test && bun run --filter @chatroom/server check:test && bun run --filter @chatroom/connector check:test && bun run --filter @chatroom/web check:test",
+    "check:coverage": "bun run --filter @chatroom/shared check:coverage && bun run --filter @chatroom/server check:coverage && bun run --filter @chatroom/connector check:coverage && bun run --filter @chatroom/web check:coverage",
+    "check:lint": "bun run --filter @chatroom/shared check:lint && bun run --filter @chatroom/server check:lint && bun run --filter @chatroom/connector check:lint && bun run --filter @chatroom/web check:lint",
+    "check:format": "bun run --filter @chatroom/shared check:format && bun run --filter @chatroom/server check:format && bun run --filter @chatroom/connector check:format && bun run --filter @chatroom/web check:format",
+    "check:all": "bun run check:types && bun run check:test && bun run check:coverage && bun run check:lint && bun run check:format"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "@eslint/js": "latest",
+    "@typescript-eslint/eslint-plugin": "latest",
+    "@typescript-eslint/parser": "latest",
+    "@vitest/coverage-v8": "latest",
+    "bun-types": "latest",
+    "eslint": "latest",
+    "eslint-plugin-svelte": "latest",
+    "globals": "latest",
+    "prettier": "latest",
+    "prettier-plugin-svelte": "latest",
+    "svelte-eslint-parser": "latest",
+    "typescript": "^5.7.0",
+    "vitest": "latest"
   }
 }

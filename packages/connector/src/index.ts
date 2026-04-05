@@ -13,11 +13,12 @@ import {
   isNotification,
   makeRequest,
 } from '@chatroom/shared'
+import { formatMemberList, serverUrlToWsUrl } from './utils.js'
 
 // ── Configuration ───────────────────────────────────────────────────────────
 
 const SERVER_URL = process.env.CHATROOM_URL || 'http://localhost:3000'
-const WS_URL = SERVER_URL.replace(/^http/, 'ws')
+const WS_URL = serverUrlToWsUrl(SERVER_URL)
 
 // ── State ───────────────────────────────────────────────────────────────────
 
@@ -61,10 +62,14 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: 'object' as const,
         properties: {
-          name: { type: 'string', description: 'Your unique name in the chatroom' },
+          name: {
+            type: 'string',
+            description: 'Your unique name in the chatroom',
+          },
           description: {
             type: 'string',
-            description: 'A short description of your role and responsibilities',
+            description:
+              'A short description of your role and responsibilities',
           },
         },
         required: ['name', 'description'],
@@ -76,7 +81,10 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: 'object' as const,
         properties: {
-          channel_id: { type: 'string', description: 'The channel ID received from connect_chat' },
+          channel_id: {
+            type: 'string',
+            description: 'The channel ID received from connect_chat',
+          },
           text: { type: 'string', description: 'The message text to send' },
           mentions: {
             type: 'array',
@@ -89,7 +97,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'list_members',
-      description: 'List all members currently connected to the chatroom with their role descriptions.',
+      description:
+        'List all members currently connected to the chatroom with their role descriptions.',
       inputSchema: {
         type: 'object' as const,
         properties: {},
@@ -107,7 +116,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     case 'connect_chat':
       return handleConnectChat(args as { name: string; description: string })
     case 'send_message':
-      return handleSendMessage(args as { channel_id: string; text: string; mentions?: string[] })
+      return handleSendMessage(
+        args as { channel_id: string; text: string; mentions?: string[] },
+      )
     case 'list_members':
       return handleListMembers()
     default:
@@ -118,7 +129,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 async function handleConnectChat(args: { name: string; description: string }) {
   if (connectedName) {
     return {
-      content: [{ type: 'text' as const, text: `Already connected as "${connectedName}"` }],
+      content: [
+        {
+          type: 'text' as const,
+          text: `Already connected as "${connectedName}"`,
+        },
+      ],
     }
   }
 
@@ -130,14 +146,19 @@ async function handleConnectChat(args: { name: string; description: string }) {
     })
 
     if (!res.ok) {
-      const err = await res.json() as { error?: string }
+      const err = (await res.json()) as { error?: string }
       return {
-        content: [{ type: 'text' as const, text: `Failed to connect: ${err.error || res.statusText}` }],
+        content: [
+          {
+            type: 'text' as const,
+            text: `Failed to connect: ${err.error || res.statusText}`,
+          },
+        ],
         isError: true,
       }
     }
 
-    const data = await res.json() as { channel_id: string }
+    const data = (await res.json()) as { channel_id: string }
     connectedName = args.name
     channelId = data.channel_id
 
@@ -154,23 +175,42 @@ async function handleConnectChat(args: { name: string; description: string }) {
     }
   } catch (e) {
     return {
-      content: [{ type: 'text' as const, text: `Connection error: ${(e as Error).message}` }],
+      content: [
+        {
+          type: 'text' as const,
+          text: `Connection error: ${(e as Error).message}`,
+        },
+      ],
       isError: true,
     }
   }
 }
 
-async function handleSendMessage(args: { channel_id: string; text: string; mentions?: string[] }) {
+async function handleSendMessage(args: {
+  channel_id: string
+  text: string
+  mentions?: string[]
+}) {
   if (!connectedName || !wsConnection) {
     return {
-      content: [{ type: 'text' as const, text: 'Not connected. Call connect_chat first.' }],
+      content: [
+        {
+          type: 'text' as const,
+          text: 'Not connected. Call connect_chat first.',
+        },
+      ],
       isError: true,
     }
   }
 
   if (args.channel_id !== channelId) {
     return {
-      content: [{ type: 'text' as const, text: `Invalid channel_id. Expected "${channelId}".` }],
+      content: [
+        {
+          type: 'text' as const,
+          text: `Invalid channel_id. Expected "${channelId}".`,
+        },
+      ],
       isError: true,
     }
   }
@@ -183,13 +223,15 @@ async function handleSendMessage(args: { channel_id: string; text: string; menti
       mentions: args.mentions ?? [],
     })
 
-    const result = await sendRpcRequest(id, request)
+    await sendRpcRequest(id, request)
     return {
       content: [{ type: 'text' as const, text: `Message sent.` }],
     }
   } catch (e) {
     return {
-      content: [{ type: 'text' as const, text: `Send failed: ${(e as Error).message}` }],
+      content: [
+        { type: 'text' as const, text: `Send failed: ${(e as Error).message}` },
+      ],
       isError: true,
     }
   }
@@ -200,12 +242,19 @@ async function handleListMembers() {
     const res = await fetch(`${SERVER_URL}/members`)
     if (!res.ok) {
       return {
-        content: [{ type: 'text' as const, text: `Failed to list members: ${res.statusText}` }],
+        content: [
+          {
+            type: 'text' as const,
+            text: `Failed to list members: ${res.statusText}`,
+          },
+        ],
         isError: true,
       }
     }
 
-    const data = await res.json() as { members: Array<{ name: string; description: string; channel_id: string }> }
+    const data = (await res.json()) as {
+      members: Array<{ name: string; description: string; channel_id: string }>
+    }
 
     if (data.members.length === 0) {
       return {
@@ -213,16 +262,16 @@ async function handleListMembers() {
       }
     }
 
-    const list = data.members
-      .map((m) => `- ${m.name}: ${m.description}`)
-      .join('\n')
+    const list = formatMemberList(data.members)
 
     return {
       content: [{ type: 'text' as const, text: `Connected members:\n${list}` }],
     }
   } catch (e) {
     return {
-      content: [{ type: 'text' as const, text: `Error: ${(e as Error).message}` }],
+      content: [
+        { type: 'text' as const, text: `Error: ${(e as Error).message}` },
+      ],
       isError: true,
     }
   }
