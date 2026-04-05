@@ -7,7 +7,7 @@ import {
   makeRequest,
 } from '@chatroom/shared'
 import { getOrCreateRoom } from './state.js'
-import { handleClose, handleMessage, handleOpen } from './ws.js'
+import { handleClose, handleMessage, handleOpen, wsHandlers } from './ws.js'
 
 function clearDefaultRoom() {
   const room = getOrCreateRoom()
@@ -104,6 +104,50 @@ describe('websocket handlers', () => {
     expect(logSpy).toHaveBeenCalledWith(
       '[ws] alpha connected to room "general"',
     )
+  })
+
+  it('exposes websocket adapter handlers that delegate to the runtime handlers', () => {
+    const room = getOrCreateRoom()
+    const socket = createSocket('alpha')
+    const remaining = createSocket('beta')
+
+    room.addMember({ name: 'alpha', description: 'frontend agent' })
+    room.addMember({ name: 'beta', description: 'backend agent' })
+    room.registerWebSocket(remaining.raw, 'beta')
+
+    wsHandlers.open(socket)
+    expect(socket.close).not.toHaveBeenCalled()
+
+    wsHandlers.message(socket, makeRequest(9, 'ping'))
+    expect(socket.send).toHaveBeenNthCalledWith(1, {
+      jsonrpc: '2.0',
+      id: 9,
+      error: {
+        code: METHOD_NOT_FOUND,
+        message: 'Unknown method "ping"',
+        data: undefined,
+      },
+    })
+
+    wsHandlers.close(socket)
+    expect(remaining.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'member_left',
+        params: {
+          name: 'alpha',
+        },
+      }),
+    )
+    expect(socket.send).toHaveBeenNthCalledWith(1, {
+      jsonrpc: '2.0',
+      id: 9,
+      error: {
+        code: METHOD_NOT_FOUND,
+        message: 'Unknown method "ping"',
+        data: undefined,
+      },
+    })
   })
 
   it('rejects invalid websocket payloads', () => {

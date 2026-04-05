@@ -26,13 +26,26 @@ export function handleMembers() {
   return { members: room.getMembers() } satisfies MembersResponse
 }
 
-/* v8 ignore start -- framework route wiring delegates to tested handlers */
+export const routeHandlers = {
+  connect({
+    body,
+    set,
+  }: {
+    body: { name: string; description: string }
+    set: { status?: number | string }
+  }) {
+    return handleConnect(body, set)
+  },
+  members() {
+    return handleMembers()
+  },
+}
+
 export const routes = new Elysia()
-  .post('/connect', ({ body, set }) => handleConnect(body, set), {
+  .post('/connect', routeHandlers.connect, {
     body: t.Object({
       name: t.String(),
       description: t.String(),
     }),
   })
-  .get('/members', () => handleMembers())
-/* v8 ignore stop */
+  .get('/members', routeHandlers.members)

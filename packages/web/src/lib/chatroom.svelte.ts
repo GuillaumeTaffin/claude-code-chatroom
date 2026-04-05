@@ -1,14 +1,13 @@
 import {
 	type JsonRpcMessage,
-	type NewMessageParams,
 	type MemberJoinedParams,
 	type MemberLeftParams,
+	type NewMessageParams,
+	type JsonRpcResponse,
 	isNotification,
 	isResponse,
 	makeRequest,
 } from '@chatroom/shared'
-
-// ── Types ───────────────────────────────────────────────────────────────────
 
 export interface ChatMessage {
 	id: string
@@ -26,261 +25,353 @@ export interface ChatMember {
 	channel_id: string
 }
 
-// ── Reactive state ──────────────────────────────────────────────────────────
-
-let messages = $state<ChatMessage[]>([])
-let members = $state<ChatMember[]>([])
-let connected = $state(false)
-let myName = $state('')
-let channelId = $state('')
-
-// ── Internal state ──────────────────────────────────────────────────────────
-
-let ws: WebSocket | null = null
-let rpcIdCounter = 0
-const pendingRequests = new Map<
-	string | number,
-	{ resolve: (v: unknown) => void; reject: (e: Error) => void }
->()
-
-const SERVER_URL = 'http://localhost:3000'
-const WS_URL = 'ws://localhost:3000'
-
-// ── Public API ──────────────────────────────────────────────────────────────
-
-export function getMessages() {
-	return messages
+interface PendingRequest {
+	resolve: (value: unknown) => void
+	reject: (error: Error) => void
+	timeout: ReturnType<typeof setTimeout>
 }
 
-export function getMembers() {
-	return members
+export interface ChatroomSocketMessageEvent {
+	data: string
 }
 
-export function isConnected() {
-	return connected
+export interface ChatroomSocket {
+	onopen: (() => void) | null
+	onerror: ((event: unknown) => void) | null
+	onclose: (() => void) | null
+	onmessage: ((event: ChatroomSocketMessageEvent) => void) | null
+	send(data: string): void
+	close(): void
 }
 
-export function getMyName() {
-	return myName
+export type ChatroomSocketConstructor = new (url: string) => ChatroomSocket
+
+export interface ChatroomModelDependencies {
+	fetchImpl: typeof fetch
+	WebSocketImpl?: ChatroomSocketConstructor
+	logger: Pick<Console, 'error'>
+	now: () => string
+	randomUUID: () => string
+	serverUrl: string
+	wsUrl: string
+	requestTimeoutMs: number
 }
 
-export function getChannelId() {
-	return channelId
+export interface ChatroomModel {
+	readonly messages: ChatMessage[]
+	readonly members: ChatMember[]
+	readonly connected: boolean
+	readonly myName: string
+	readonly channelId: string
+	connect(name: string, description: string): Promise<void>
+	sendMessage(text: string, mentions?: string[]): Promise<void>
+	disconnect(): void
+	handleNotification(method: string, params: unknown): void
 }
 
-export async function connect(
-	name: string,
-	description: string,
-): Promise<void> {
-	// Register via REST
-	const res = await fetch(`${SERVER_URL}/connect`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ name, description }),
-	})
+const DEFAULT_SERVER_URL = 'http://localhost:3000'
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 
-	if (!res.ok) {
-		const err = (await res.json()) as { error?: string }
-		throw new Error(err.error || res.statusText)
+function getDefaultDependencies(): ChatroomModelDependencies {
+	const serverUrl = DEFAULT_SERVER_URL
+	return {
+		fetchImpl: fetch,
+		WebSocketImpl: globalThis.WebSocket as
+			| ChatroomSocketConstructor
+			| undefined,
+		logger: console,
+		now: () => new Date().toISOString(),
+		randomUUID: () => crypto.randomUUID(),
+		serverUrl,
+		wsUrl: serverUrl.replace(/^http/, 'ws'),
+		requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+	}
+}
+
+export function createChatroomModel(
+	overrides: Partial<ChatroomModelDependencies> = {},
+): ChatroomModel {
+	const dependencies = { ...getDefaultDependencies(), ...overrides }
+
+	let messages = $state<ChatMessage[]>([])
+	let members = $state<ChatMember[]>([])
+	let connected = $state(false)
+	let myName = $state('')
+	let channelId = $state('')
+	let socket = $state<ChatroomSocket | null>(null)
+	let rpcIdCounter = 0
+	const pendingRequests = new Map<string | number, PendingRequest>()
+
+	function addSystemMessage(text: string) {
+		messages = [
+			...messages,
+			{
+				id: dependencies.randomUUID(),
+				type: 'system',
+				text,
+				mentions: [],
+				timestamp: dependencies.now(),
+			},
+		]
 	}
 
-	const data = (await res.json()) as { channel_id: string }
-	myName = name
-	channelId = data.channel_id
+	async function refreshMembers() {
+		try {
+			const response = await dependencies.fetchImpl(
+				`${dependencies.serverUrl}/members`,
+			)
+			if (!response.ok) return
 
-	// Establish WebSocket
-	await connectWebSocket(name)
-	connected = true
-
-	// Fetch initial member list
-	await refreshMembers()
-
-	addSystemMessage(`You joined the chatroom as "${name}"`)
-}
-
-export async function sendMessage(
-	text: string,
-	mentions: string[] = [],
-): Promise<void> {
-	if (!ws || !connected) throw new Error('Not connected')
-
-	const id = ++rpcIdCounter
-	const request = makeRequest(id, 'send_message', {
-		channel_id: channelId,
-		text,
-		mentions,
-	})
-
-	await sendRpcRequest(id, request)
-
-	// Add own message to the local list (since server doesn't echo back)
-	messages = [
-		...messages,
-		{
-			id: crypto.randomUUID(),
-			type: 'message',
-			sender: myName,
-			senderRole: '',
-			text,
-			mentions,
-			timestamp: new Date().toISOString(),
-		},
-	]
-}
-
-export function disconnect(): void {
-	if (ws) {
-		ws.close()
-		ws = null
+			const data = (await response.json()) as { members: ChatMember[] }
+			members = data.members
+		} catch {
+			// Deliberately swallow member refresh failures. A stale member list is better
+			// than failing the connection flow after registration succeeded.
+		}
 	}
-	connected = false
-	myName = ''
-	channelId = ''
-	messages = []
-	members = []
-}
 
-// ── WebSocket ───────────────────────────────────────────────────────────────
-
-function connectWebSocket(name: string): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const socket = new WebSocket(
-			`${WS_URL}/ws?name=${encodeURIComponent(name)}`,
-		)
-
-		socket.onopen = () => {
-			ws = socket
-			resolve()
+	function clearPendingRequests(error: Error) {
+		for (const pending of pendingRequests.values()) {
+			clearTimeout(pending.timeout)
+			pending.reject(error)
 		}
+		pendingRequests.clear()
+	}
 
-		socket.onerror = () => {
-			reject(new Error('WebSocket connection failed'))
-		}
+	function handleResponse(message: JsonRpcResponse) {
+		const pending = pendingRequests.get(message.id)
+		if (!pending) return
 
-		socket.onclose = () => {
-			ws = null
-			connected = false
-		}
+		pendingRequests.delete(message.id)
+		clearTimeout(pending.timeout)
 
-		socket.onmessage = (event) => {
-			try {
-				const msg: JsonRpcMessage = JSON.parse(event.data)
-
-				// Handle responses to our requests
-				if (isResponse(msg)) {
-					const pending = pendingRequests.get(msg.id)
-					if (pending) {
-						pendingRequests.delete(msg.id)
-						if (msg.error) {
-							pending.reject(new Error(msg.error.message))
-						} else {
-							pending.resolve(msg.result)
-						}
-					}
-					return
-				}
-
-				// Handle notifications
-				if (isNotification(msg)) {
-					handleNotification(msg.method, msg.params)
-				}
-			} catch (e) {
-				console.error('Failed to parse WS message:', e)
-			}
-		}
-	})
-}
-
-function sendRpcRequest(id: number, request: unknown): Promise<unknown> {
-	return new Promise((resolve, reject) => {
-		if (!ws) {
-			reject(new Error('WebSocket not connected'))
+		if ('error' in message && message.error) {
+			pending.reject(new Error(message.error.message))
 			return
 		}
 
-		const timeout = setTimeout(() => {
-			pendingRequests.delete(id)
-			reject(new Error('Request timed out'))
-		}, 10000)
+		pending.resolve(message.result)
+	}
 
-		pendingRequests.set(id, {
-			resolve: (v) => {
-				clearTimeout(timeout)
-				resolve(v)
+	function connectWebSocket(name: string): Promise<void> {
+		return new Promise((resolve, reject) => {
+			if (!dependencies.WebSocketImpl) {
+				reject(new Error('WebSocket is not available'))
+				return
+			}
+
+			const nextSocket = new dependencies.WebSocketImpl(
+				`${dependencies.wsUrl}/ws?name=${encodeURIComponent(name)}`,
+			)
+
+			nextSocket.onopen = () => {
+				socket = nextSocket
+				resolve()
+			}
+
+			nextSocket.onerror = () => {
+				reject(new Error('WebSocket connection failed'))
+			}
+
+			nextSocket.onclose = () => {
+				socket = null
+				connected = false
+				clearPendingRequests(new Error('WebSocket connection closed'))
+			}
+
+			nextSocket.onmessage = (event) => {
+				try {
+					const message = JSON.parse(event.data) as JsonRpcMessage
+
+					if (isResponse(message)) {
+						handleResponse(message)
+						return
+					}
+
+					if (isNotification(message)) {
+						handleNotification(message.method, message.params)
+					}
+				} catch (error) {
+					dependencies.logger.error('Failed to parse WS message:', error)
+				}
+			}
+		})
+	}
+
+	function sendRpcRequest(id: number, request: unknown): Promise<unknown> {
+		return new Promise((resolve, reject) => {
+			const timeout = setTimeout(() => {
+				pendingRequests.delete(id)
+				reject(new Error('Request timed out'))
+			}, dependencies.requestTimeoutMs)
+
+			pendingRequests.set(id, {
+				resolve,
+				reject,
+				timeout,
+			})
+
+			socket!.send(JSON.stringify(request))
+		})
+	}
+
+	async function connect(name: string, description: string): Promise<void> {
+		const response = await dependencies.fetchImpl(
+			`${dependencies.serverUrl}/connect`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name, description }),
 			},
-			reject: (e) => {
-				clearTimeout(timeout)
-				reject(e)
-			},
+		)
+
+		if (!response.ok) {
+			const error = (await response.json()) as { error?: string }
+			throw new Error(error.error || response.statusText)
+		}
+
+		const data = (await response.json()) as { channel_id: string }
+		myName = name
+		channelId = data.channel_id
+
+		await connectWebSocket(name)
+		connected = true
+		await refreshMembers()
+		addSystemMessage(`You joined the chatroom as "${name}"`)
+	}
+
+	async function sendMessage(
+		text: string,
+		mentions: string[] = [],
+	): Promise<void> {
+		if (!socket || !connected) {
+			throw new Error('Not connected')
+		}
+
+		const id = ++rpcIdCounter
+		const request = makeRequest(id, 'send_message', {
+			channel_id: channelId,
+			text,
+			mentions,
 		})
 
-		ws.send(JSON.stringify(request))
-	})
-}
+		await sendRpcRequest(id, request)
 
-// ── Notification handlers ───────────────────────────────────────────────────
+		messages = [
+			...messages,
+			{
+				id: dependencies.randomUUID(),
+				type: 'message',
+				sender: myName,
+				senderRole: '',
+				text,
+				mentions,
+				timestamp: dependencies.now(),
+			},
+		]
+	}
 
-function handleNotification(method: string, params: unknown) {
-	switch (method) {
-		case 'new_message': {
-			const p = params as NewMessageParams
-			messages = [
-				...messages,
-				{
-					id: crypto.randomUUID(),
-					type: 'message',
-					sender: p.sender,
-					senderRole: p.sender_role,
-					text: p.text,
-					mentions: p.mentions,
-					timestamp: p.timestamp,
-				},
-			]
-			break
+	function disconnect(): void {
+		if (socket) {
+			socket.close()
+			socket = null
 		}
 
-		case 'member_joined': {
-			const p = params as MemberJoinedParams
-			addSystemMessage(`${p.name} joined (${p.description})`)
-			members = [
-				...members,
-				{ name: p.name, description: p.description, channel_id: channelId },
-			]
-			break
-		}
+		clearPendingRequests(new Error('Disconnected'))
+		connected = false
+		myName = ''
+		channelId = ''
+		messages = []
+		members = []
+	}
 
-		case 'member_left': {
-			const p = params as MemberLeftParams
-			addSystemMessage(`${p.name} left the chatroom`)
-			members = members.filter((m) => m.name !== p.name)
-			break
+	function handleNotification(method: string, params: unknown): void {
+		switch (method) {
+			case 'new_message': {
+				const payload = params as NewMessageParams
+				messages = [
+					...messages,
+					{
+						id: dependencies.randomUUID(),
+						type: 'message',
+						sender: payload.sender,
+						senderRole: payload.sender_role,
+						text: payload.text,
+						mentions: payload.mentions,
+						timestamp: payload.timestamp,
+					},
+				]
+				break
+			}
+
+			case 'member_joined': {
+				const payload = params as MemberJoinedParams
+				addSystemMessage(`${payload.name} joined (${payload.description})`)
+				members = [
+					...members,
+					{
+						name: payload.name,
+						description: payload.description,
+						channel_id: channelId,
+					},
+				]
+				break
+			}
+
+			case 'member_left': {
+				const payload = params as MemberLeftParams
+				addSystemMessage(`${payload.name} left the chatroom`)
+				members = members.filter((member) => member.name !== payload.name)
+				break
+			}
 		}
 	}
-}
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-function addSystemMessage(text: string) {
-	messages = [
-		...messages,
-		{
-			id: crypto.randomUUID(),
-			type: 'system',
-			text,
-			mentions: [],
-			timestamp: new Date().toISOString(),
+	return {
+		get messages() {
+			return messages
 		},
-	]
-}
-
-async function refreshMembers() {
-	try {
-		const res = await fetch(`${SERVER_URL}/members`)
-		if (res.ok) {
-			const data = (await res.json()) as { members: ChatMember[] }
-			members = data.members
-		}
-	} catch {
-		// silently fail
+		get members() {
+			return members
+		},
+		get connected() {
+			return connected
+		},
+		get myName() {
+			return myName
+		},
+		get channelId() {
+			return channelId
+		},
+		connect,
+		sendMessage,
+		disconnect,
+		handleNotification,
 	}
 }
+
+export const chatroomModel = createChatroomModel()
+
+export function getMessages() {
+	return chatroomModel.messages
+}
+
+export function getMembers() {
+	return chatroomModel.members
+}
+
+export function isConnected() {
+	return chatroomModel.connected
+}
+
+export function getMyName() {
+	return chatroomModel.myName
+}
+
+export function getChannelId() {
+	return chatroomModel.channelId
+}
+
+export const connect = chatroomModel.connect
+export const sendMessage = chatroomModel.sendMessage
+export const disconnect = chatroomModel.disconnect

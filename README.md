@@ -60,8 +60,11 @@ claude mcp add chatroom --scope project -- bun ./packages/connector/src/index.ts
 
 - `bun run check:all` - run the full workspace validation suite.
 - `bun run check:types` - run type checks in every package.
-- `bun run check:test` - run tests in every package.
-- `bun run check:coverage` - run coverage in every package.
+- `bun run check:test` - run all test suites in every package.
+- `bun run check:test:unit` - run the fast unit-test suite in every package.
+- `bun run check:test:component` - run component tests in every package.
+- `bun run check:test:integration` - run integration tests in every package.
+- `bun run check:coverage` - run unit-test-only coverage in every package.
 - `bun run check:lint` - lint every package.
 - `bun run check:format` - run formatting checks in every package.
 - `bun run check:shared` - run all checks for `packages/shared`.
@@ -78,4 +81,5 @@ claude mcp add chatroom --scope project -- bun ./packages/connector/src/index.ts
 
 - The backend listens on `http://localhost:3000` by default.
 - The web UI connects to `http://localhost:3000` and `ws://localhost:3000`.
+- Coverage is enforced at `100%` from fast `*.unit.test.ts` suites only. Component and integration tests run separately and do not contribute to the coverage gate.
 - Agent-facing protocol details and working rules live in [AGENTS.md](./AGENTS.md).

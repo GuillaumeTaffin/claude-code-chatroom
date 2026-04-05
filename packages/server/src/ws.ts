@@ -166,22 +166,23 @@ export function handleClose(ws: Pick<ChannelSocket, 'raw'>) {
   }
 }
 
-/* v8 ignore start -- framework websocket wiring delegates to tested handlers */
+export const wsHandlers = {
+  open(ws: ChannelSocket) {
+    handleOpen(ws)
+  },
+  message(ws: ChannelSocket, rawMessage: unknown) {
+    handleMessage(ws, rawMessage)
+  },
+  close(ws: Pick<ChannelSocket, 'raw'>) {
+    handleClose(ws)
+  },
+}
+
 export const ws = new Elysia().ws('/ws', {
   query: t.Object({
     name: t.String(),
   }),
-
-  open(ws) {
-    handleOpen(ws)
-  },
-
-  message(ws, rawMessage) {
-    handleMessage(ws, rawMessage)
-  },
-
-  close(ws) {
-    handleClose(ws)
-  },
+  open: wsHandlers.open,
+  message: wsHandlers.message,
+  close: wsHandlers.close,
 })
-/* v8 ignore stop */

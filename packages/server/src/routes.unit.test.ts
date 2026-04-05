@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { handleConnect, handleMembers } from './routes.js'
+import { handleConnect, handleMembers, routeHandlers } from './routes.js'
 import { getOrCreateRoom } from './state.js'
 
 function clearDefaultRoom() {
@@ -52,6 +52,26 @@ describe('route handlers', () => {
     handleConnect({ name: 'alpha', description: 'frontend agent' }, {})
 
     expect(handleMembers()).toEqual({
+      members: [
+        {
+          name: 'alpha',
+          description: 'frontend agent',
+          channel_id: 'general',
+        },
+      ],
+    })
+  })
+
+  it('exposes Elysia route adapters that delegate to the handlers', () => {
+    const set: { status?: number } = {}
+
+    expect(
+      routeHandlers.connect({
+        body: { name: 'alpha', description: 'frontend agent' },
+        set,
+      }),
+    ).toEqual({ channel_id: 'general' })
+    expect(routeHandlers.members()).toEqual({
       members: [
         {
           name: 'alpha',
