@@ -1,4 +1,12 @@
 <script lang="ts">
+	import * as Avatar from '$lib/components/ui/avatar/index.js'
+	import { Badge } from '$lib/components/ui/badge/index.js'
+	import { Button } from '$lib/components/ui/button/index.js'
+	import * as Card from '$lib/components/ui/card/index.js'
+	import { Input } from '$lib/components/ui/input/index.js'
+	import { Label } from '$lib/components/ui/label/index.js'
+	import * as ScrollArea from '$lib/components/ui/scroll-area/index.js'
+	import { Separator } from '$lib/components/ui/separator/index.js'
 	import {
 		connect,
 		sendMessage,
@@ -9,13 +17,14 @@
 		getMyName,
 	} from '$lib/chatroom.svelte.js'
 	import { getMemberInitial, getNameColor } from '$lib/chatroom-ui.js'
+	import { cn } from '$lib/utils.js'
 
 	let joinName = $state('')
 	let joinDescription = $state('')
 	let messageText = $state('')
 	let joinError = $state('')
 	let sendError = $state('')
-	let messagesContainer: HTMLDivElement | undefined = $state()
+	let messagesContainer: HTMLElement | null = $state(null)
 
 	const messages = $derived(getMessages())
 	const members = $derived(getMembers())
@@ -69,191 +78,240 @@
 </script>
 
 {#if !connected}
-	<!-- Join screen -->
 	<div
-		class="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-100"
+		class="dark bg-background text-foreground relative min-h-screen overflow-hidden"
 	>
-		<div
-			class="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-8 shadow-2xl"
-		>
-			<h1 class="mb-2 text-2xl font-semibold tracking-tight">Agent Chatroom</h1>
-			<p class="mb-6 text-sm text-zinc-400">
-				Join the chatroom to communicate with agents and humans.
-			</p>
+		<div class="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_40%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(9,9,11,1))]"></div>
+		<div class="absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,_rgba(63,63,70,0.18),_transparent)]"></div>
 
-			<form onsubmit={handleJoin} class="space-y-4">
-				<div>
-					<label for="name" class="mb-1 block text-sm font-medium text-zinc-300"
-						>Name</label
-					>
-					<input
-						id="name"
-						type="text"
-						bind:value={joinName}
-						placeholder="e.g. frontend-agent"
-						required
-						class="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-					/>
-				</div>
+		<div class="relative flex min-h-screen items-center justify-center px-4 py-12">
+			<Card.Root
+				class="w-full max-w-md border-border/60 bg-card/95 shadow-2xl shadow-black/35 backdrop-blur"
+			>
+				<Card.Header class="space-y-2">
+					<Badge variant="outline" class="border-primary/25 bg-primary/10 text-primary">
+						Dark-first UI
+					</Badge>
+					<Card.Title class="text-2xl font-semibold tracking-tight">
+						Agent Chatroom
+					</Card.Title>
+					<Card.Description>
+						Join the chatroom to communicate with agents and humans.
+					</Card.Description>
+				</Card.Header>
 
-				<div>
-					<label for="desc" class="mb-1 block text-sm font-medium text-zinc-300"
-						>Role description</label
-					>
-					<input
-						id="desc"
-						type="text"
-						bind:value={joinDescription}
-						placeholder="e.g. Handles UI components and styling"
-						required
-						class="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-					/>
-				</div>
+				<Card.Content>
+					<form onsubmit={handleJoin} class="space-y-4">
+						<div class="space-y-2">
+							<Label for="name">Name</Label>
+							<Input
+								id="name"
+								type="text"
+								bind:value={joinName}
+								placeholder="e.g. frontend-agent"
+								required
+								autocomplete="nickname"
+								class="h-10 bg-input/30"
+							/>
+						</div>
 
-				{#if joinError}
-					<p class="text-sm text-red-400">{joinError}</p>
-				{/if}
+						<div class="space-y-2">
+							<Label for="desc">Role description</Label>
+							<Input
+								id="desc"
+								type="text"
+								bind:value={joinDescription}
+								placeholder="e.g. Handles UI components and styling"
+								required
+								class="h-10 bg-input/30"
+							/>
+						</div>
 
-				<button
-					type="submit"
-					class="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500"
-				>
-					Join Chatroom
-				</button>
-			</form>
+						{#if joinError}
+							<p class="text-destructive text-sm">{joinError}</p>
+						{/if}
+
+						<Button type="submit" class="h-10 w-full">
+							Join Chatroom
+						</Button>
+					</form>
+				</Card.Content>
+			</Card.Root>
 		</div>
 	</div>
 {:else}
-	<!-- Chat UI -->
-	<div class="flex h-screen bg-zinc-950 text-zinc-100">
-		<!-- Sidebar: Members -->
-		<aside
-			class="flex w-64 shrink-0 flex-col border-r border-zinc-800 bg-zinc-900"
+	<div class="dark bg-background text-foreground h-screen">
+		<div
+			class="from-background via-background to-muted/20 grid h-full min-h-0 bg-gradient-to-br md:grid-cols-[18rem_minmax(0,1fr)]"
 		>
-			<div
-				class="flex items-center justify-between border-b border-zinc-800 px-4 py-3"
+			<aside
+				class="bg-sidebar/80 border-border/80 flex min-h-0 flex-col border-b backdrop-blur md:border-r md:border-b-0"
 			>
-				<h2 class="text-sm font-semibold text-zinc-300">Members</h2>
-				<span class="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
-					>{members.length}</span
-				>
-			</div>
-
-			<div class="flex-1 overflow-y-auto p-3 space-y-2">
-				{#each members as member (member.name)}
-					<div class="rounded-lg bg-zinc-800/50 p-2.5">
-						<div class="flex items-center gap-2">
-							<div
-								class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-xs font-medium"
-							>
-								{getMemberInitial(member.name)}
-							</div>
-							<span class="text-sm font-medium {getNameColor(member.name)}"
-								>{member.name}</span
-							>
-						</div>
-						<p class="mt-1 pl-8 text-xs text-zinc-500">{member.description}</p>
+				<div class="flex items-center justify-between px-4 py-4">
+					<div>
+						<h2 class="text-sidebar-foreground text-sm font-semibold">Members</h2>
+						<p class="text-muted-foreground text-xs">Live room presence</p>
 					</div>
-				{/each}
-			</div>
-
-			<div class="border-t border-zinc-800 p-3">
-				<div class="mb-2 flex items-center gap-2">
-					<div
-						class="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-medium"
-					>
-						{getMemberInitial(myName)}
-					</div>
-					<span class="text-sm font-medium">{myName}</span>
+					<Badge variant="secondary">{members.length}</Badge>
 				</div>
-				<button
-					onclick={handleDisconnect}
-					class="w-full rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-400 transition hover:bg-zinc-700 hover:text-zinc-200"
-				>
-					Disconnect
-				</button>
-			</div>
-		</aside>
 
-		<!-- Main chat area -->
-		<main class="flex flex-1 flex-col">
-			<!-- Header -->
-			<header class="flex items-center border-b border-zinc-800 px-6 py-3">
-				<h1 class="text-sm font-semibold text-zinc-300">#general</h1>
-			</header>
+				<Separator />
 
-			<!-- Messages -->
-			<div
-				bind:this={messagesContainer}
-				class="flex-1 overflow-y-auto px-6 py-4 space-y-3"
-			>
-				{#each messages as msg (msg.id)}
-					{#if msg.type === 'system'}
-						<div class="flex items-center gap-3 py-1">
-							<div class="h-px flex-1 bg-zinc-800"></div>
-							<span class="text-xs text-zinc-600 italic">{msg.text}</span>
-							<div class="h-px flex-1 bg-zinc-800"></div>
-						</div>
-					{:else}
-						<div class="group flex items-start gap-3">
+				<ScrollArea.Root class="min-h-0 flex-1">
+					<div class="space-y-3 p-3">
+						{#each members as member (member.name)}
 							<div
-								class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-sm font-medium {getNameColor(
-									msg.sender ?? '',
-								)}"
+								class="bg-card/75 ring-border/70 rounded-xl p-3 shadow-sm ring-1"
 							>
-								{getMemberInitial(msg.sender)}
-							</div>
-							<div class="min-w-0 flex-1">
-								<div class="flex items-baseline gap-2">
-									<span
-										class="text-sm font-semibold {getNameColor(
-											msg.sender ?? '',
-										)}">{msg.sender}</span
-									>
-									<span class="text-xs text-zinc-600"
-										>{formatTime(msg.timestamp)}</span
-									>
-								</div>
-								<p class="mt-0.5 text-sm text-zinc-300 break-words">
-									{msg.text}
-								</p>
-								{#if msg.mentions.length > 0}
-									<div class="mt-1 flex gap-1">
-										{#each msg.mentions as mention (mention)}
-											<span
-												class="rounded bg-blue-600/20 px-1.5 py-0.5 text-xs text-blue-400"
-												>@{mention}</span
-											>
-										{/each}
+								<div class="flex items-start gap-3">
+									<Avatar.Root size="sm" class="mt-0.5">
+										<Avatar.Fallback
+											class={cn('bg-muted text-xs font-semibold', getNameColor(member.name))}
+										>
+											{getMemberInitial(member.name)}
+										</Avatar.Fallback>
+									</Avatar.Root>
+
+									<div class="min-w-0 flex-1">
+										<div
+											class={cn('truncate text-sm font-medium', getNameColor(member.name))}
+										>
+											{member.name}
+										</div>
+										<p class="text-muted-foreground mt-1 text-xs leading-relaxed">
+											{member.description}
+										</p>
 									</div>
-								{/if}
+								</div>
 							</div>
-						</div>
-					{/if}
-				{/each}
-			</div>
+						{/each}
+					</div>
+				</ScrollArea.Root>
 
-			<!-- Input -->
-			<form onsubmit={handleSend} class="border-t border-zinc-800 px-6 py-4">
-				{#if sendError}
-					<p class="mb-2 text-xs text-red-400">{sendError}</p>
-				{/if}
-				<div class="flex gap-3">
-					<input
-						type="text"
-						bind:value={messageText}
-						placeholder="Type a message..."
-						class="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-					/>
-					<button
-						type="submit"
-						disabled={!messageText.trim()}
-						class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600"
+				<Separator />
+
+				<div class="space-y-3 p-3">
+					<div class="bg-card/65 ring-border/70 flex items-center gap-3 rounded-xl p-3 ring-1">
+						<Avatar.Root size="sm">
+							<Avatar.Fallback
+								class={cn('bg-primary/15 text-xs font-semibold text-primary', getNameColor(myName))}
+							>
+								{getMemberInitial(myName)}
+							</Avatar.Fallback>
+						</Avatar.Root>
+
+						<div class="min-w-0">
+							<p class="truncate text-sm font-medium">{myName}</p>
+							<p class="text-muted-foreground text-xs">Connected</p>
+						</div>
+					</div>
+
+					<Button
+						variant="outline"
+						class="w-full justify-center"
+						onclick={handleDisconnect}
 					>
-						Send
-					</button>
+						Disconnect
+					</Button>
 				</div>
-			</form>
-		</main>
+			</aside>
+
+			<main class="flex min-h-0 flex-col">
+				<header
+					class="border-border/80 bg-background/75 flex items-center justify-between border-b px-4 py-4 backdrop-blur md:px-6"
+				>
+					<div>
+						<h1 class="text-sm font-semibold tracking-wide text-zinc-200">
+							#general
+						</h1>
+						<p class="text-muted-foreground text-xs">
+							Local chat for humans and agents
+						</p>
+					</div>
+					<Badge variant="outline" class="hidden sm:inline-flex">
+						{messages.length} messages
+					</Badge>
+				</header>
+
+				<ScrollArea.Root bind:viewportRef={messagesContainer} class="min-h-0 flex-1">
+					<div class="space-y-4 px-4 py-4 md:px-6">
+						{#each messages as msg (msg.id)}
+							{#if msg.type === 'system'}
+								<div class="flex items-center gap-3 py-2">
+									<Separator class="flex-1" />
+									<span class="text-muted-foreground text-xs italic">
+										{msg.text}
+									</span>
+									<Separator class="flex-1" />
+								</div>
+							{:else}
+								<div class="group flex items-start gap-3">
+									<Avatar.Root class="mt-0.5">
+										<Avatar.Fallback
+											class={cn('bg-card text-sm font-semibold', getNameColor(msg.sender ?? ''))}
+										>
+											{getMemberInitial(msg.sender)}
+										</Avatar.Fallback>
+									</Avatar.Root>
+
+									<div class="min-w-0 flex-1 rounded-xl border border-transparent px-1 py-0.5">
+										<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+											<span
+												class={cn('text-sm font-semibold', getNameColor(msg.sender ?? ''))}
+											>
+												{msg.sender}
+											</span>
+											<span class="text-muted-foreground text-xs">
+												{formatTime(msg.timestamp)}
+											</span>
+										</div>
+
+										<p class="mt-1 break-words text-sm leading-relaxed text-zinc-200">
+											{msg.text}
+										</p>
+
+										{#if msg.mentions.length > 0}
+											<div class="mt-2 flex flex-wrap gap-1.5">
+												{#each msg.mentions as mention (mention)}
+													<Badge
+														variant="outline"
+														class="border-primary/30 bg-primary/10 text-primary"
+													>
+														@{mention}
+													</Badge>
+												{/each}
+											</div>
+										{/if}
+									</div>
+								</div>
+							{/if}
+						{/each}
+					</div>
+				</ScrollArea.Root>
+
+				<Separator />
+
+				<form
+					onsubmit={handleSend}
+					class="bg-background/80 px-4 py-4 backdrop-blur md:px-6"
+				>
+					{#if sendError}
+						<p class="text-destructive mb-2 text-xs">{sendError}</p>
+					{/if}
+
+					<div class="flex gap-3">
+						<Input
+							type="text"
+							bind:value={messageText}
+							placeholder="Type a message..."
+							class="h-10 flex-1 bg-input/30"
+						/>
+						<Button type="submit" class="h-10 px-4" disabled={!messageText.trim()}>
+							Send
+						</Button>
+					</div>
+				</form>
+			</main>
+		</div>
 	</div>
 {/if}

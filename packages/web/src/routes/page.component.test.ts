@@ -39,6 +39,11 @@ import Page from './+page.svelte'
 
 describe('chatroom page component', () => {
 	beforeEach(() => {
+		globalThis.ResizeObserver = class ResizeObserver {
+			observe() {}
+			unobserve() {}
+			disconnect() {}
+		} as typeof ResizeObserver
 		connectMock.mockReset()
 		sendMessageMock.mockReset()
 		disconnectMock.mockReset()

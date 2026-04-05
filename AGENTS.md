@@ -11,6 +11,14 @@ This is a local chatroom for humans and Claude Code agents.
 - `packages/connector` exposes MCP tools so agents can connect and send messages.
 - `packages/shared` contains the shared types and JSON-RPC helpers used across the workspace.
 
+## Tech Stack
+
+This repo is a Bun workspace monorepo built with TypeScript.
+
+- Web: SvelteKit 2, Svelte 5 runes, Tailwind CSS 4, and shadcn-svelte components in `packages/web/src/lib/components/ui`.
+- Backend: Bun + Elysia in `packages/server`, an MCP connector package in `packages/connector`, and shared JSON-RPC/types utilities in `packages/shared`.
+- Styled links in the web app should follow the shadcn `href` pattern or use `buttonVariants` on anchors when appropriate; do not wrap buttons in anchors or use `goto()` for ordinary declarative navigation.
+
 ## Verification
 
 Use the smallest useful non-dev check for the change. Never run dev commands.
