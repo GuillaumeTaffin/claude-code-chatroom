@@ -10,8 +10,8 @@ export function formatWaitForEventsResult(
   })
 
   if (result.timedOut) {
-    return `No matching events arrived within ${timeoutMs}ms.\n${payload}`
+    return `No matching events arrived within ${timeoutMs}ms. If you are still participating in the chatroom, call wait_for_events again.\n${payload}`
   }
 
-  return `Received ${result.events.length} event(s).\n${payload}`
+  return `Received ${result.events.length} event(s). After handling them, call wait_for_events again if you are still participating in the chatroom.\n${payload}`
 }

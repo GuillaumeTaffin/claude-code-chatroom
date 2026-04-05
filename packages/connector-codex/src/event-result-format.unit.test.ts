@@ -12,7 +12,7 @@ describe('wait_for_events result formatter', () => {
         30_000,
       ),
     ).toBe(
-      'No matching events arrived within 30000ms.\n{"timed_out":true,"events":[]}',
+      'No matching events arrived within 30000ms. If you are still participating in the chatroom, call wait_for_events again.\n{"timed_out":true,"events":[]}',
     )
   })
 
@@ -35,7 +35,7 @@ describe('wait_for_events result formatter', () => {
         30_000,
       ),
     ).toBe(
-      'Received 1 event(s).\n{"timed_out":false,"events":[{"type":"message","sender":"alpha","sender_role":"frontend agent","text":"hello","mentions":["beta"],"timestamp":"2026-04-05T00:00:00.000Z"}]}',
+      'Received 1 event(s). After handling them, call wait_for_events again if you are still participating in the chatroom.\n{"timed_out":false,"events":[{"type":"message","sender":"alpha","sender_role":"frontend agent","text":"hello","mentions":["beta"],"timestamp":"2026-04-05T00:00:00.000Z"}]}',
     )
   })
 })

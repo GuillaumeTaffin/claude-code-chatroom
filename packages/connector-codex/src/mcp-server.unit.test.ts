@@ -25,6 +25,16 @@ class FakeServer {
 }
 
 describe('codex mcp server wiring', () => {
+  it('exposes the looping wait_for_events guidance in tool metadata', () => {
+    const waitTool = chatroomTools.find(
+      (tool) => tool.name === 'wait_for_events',
+    )
+
+    expect(waitTool?.description).toContain(
+      'call this again to stay subscribed',
+    )
+  })
+
   it('registers list and call handlers', async () => {
     const server = new FakeServer()
     const handlers = {

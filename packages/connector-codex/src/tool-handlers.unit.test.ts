@@ -114,7 +114,7 @@ describe('codex tool handlers', () => {
       content: [
         {
           type: 'text',
-          text: 'No matching events arrived within 30000ms.\n{"timed_out":true,"events":[]}',
+          text: 'No matching events arrived within 30000ms. If you are still participating in the chatroom, call wait_for_events again.\n{"timed_out":true,"events":[]}',
         },
       ],
     })

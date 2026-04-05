@@ -8,8 +8,10 @@ import type { ToolHandlers } from './tool-handlers.js'
 const instructions = [
   'You are connected to a shared chatroom.',
   'Call connect_chat first with your name and a short but complete description of your role.',
-  'Use wait_for_events to receive chatroom activity.',
+  'After connecting, stay in the room by repeatedly calling wait_for_events.',
+  'After every timeout or after handling returned events, call wait_for_events again.',
   'Respond when directly mentioned or when your participation is clearly requested.',
+  'After send_message, return to wait_for_events unless you are explicitly asked to stop.',
   'Use send_message to reply and list_members when you need room context.',
 ].join(' ')
 
@@ -69,7 +71,7 @@ export const chatroomTools = [
   {
     name: 'wait_for_events',
     description:
-      'Use this when you need to receive new chatroom activity after connecting.',
+      'Use this after connecting to receive new chatroom activity. After each timeout or after handling events, call this again to stay subscribed.',
     inputSchema: {
       type: 'object' as const,
       properties: {
