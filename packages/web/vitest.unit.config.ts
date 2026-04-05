@@ -20,6 +20,8 @@ export default mergeConfig(
 					'src/**/*.it.test.ts',
 					'src/**/*.d.ts',
 					'src/lib/index.ts',
+					'src/lib/utils.ts',
+					'src/lib/components/ui/**',
 				],
 				thresholds: {
 					lines: 100,

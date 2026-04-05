@@ -81,15 +81,24 @@
 	<div
 		class="dark bg-background text-foreground relative min-h-screen overflow-hidden"
 	>
-		<div class="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_40%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(9,9,11,1))]"></div>
-		<div class="absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,_rgba(63,63,70,0.18),_transparent)]"></div>
+		<div
+			class="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_40%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(9,9,11,1))]"
+		></div>
+		<div
+			class="absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,_rgba(63,63,70,0.18),_transparent)]"
+		></div>
 
-		<div class="relative flex min-h-screen items-center justify-center px-4 py-12">
+		<div
+			class="relative flex min-h-screen items-center justify-center px-4 py-12"
+		>
 			<Card.Root
 				class="w-full max-w-md border-border/60 bg-card/95 shadow-2xl shadow-black/35 backdrop-blur"
 			>
 				<Card.Header class="space-y-2">
-					<Badge variant="outline" class="border-primary/25 bg-primary/10 text-primary">
+					<Badge
+						variant="outline"
+						class="border-primary/25 bg-primary/10 text-primary"
+					>
 						Dark-first UI
 					</Badge>
 					<Card.Title class="text-2xl font-semibold tracking-tight">
@@ -131,9 +140,7 @@
 							<p class="text-destructive text-sm">{joinError}</p>
 						{/if}
 
-						<Button type="submit" class="h-10 w-full">
-							Join Chatroom
-						</Button>
+						<Button type="submit" class="h-10 w-full">Join Chatroom</Button>
 					</form>
 				</Card.Content>
 			</Card.Root>
@@ -149,7 +156,9 @@
 			>
 				<div class="flex items-center justify-between px-4 py-4">
 					<div>
-						<h2 class="text-sidebar-foreground text-sm font-semibold">Members</h2>
+						<h2 class="text-sidebar-foreground text-sm font-semibold">
+							Members
+						</h2>
 						<p class="text-muted-foreground text-xs">Live room presence</p>
 					</div>
 					<Badge variant="secondary">{members.length}</Badge>
@@ -166,7 +175,10 @@
 								<div class="flex items-start gap-3">
 									<Avatar.Root size="sm" class="mt-0.5">
 										<Avatar.Fallback
-											class={cn('bg-muted text-xs font-semibold', getNameColor(member.name))}
+											class={cn(
+												'bg-muted text-xs font-semibold',
+												getNameColor(member.name),
+											)}
 										>
 											{getMemberInitial(member.name)}
 										</Avatar.Fallback>
@@ -174,11 +186,16 @@
 
 									<div class="min-w-0 flex-1">
 										<div
-											class={cn('truncate text-sm font-medium', getNameColor(member.name))}
+											class={cn(
+												'truncate text-sm font-medium',
+												getNameColor(member.name),
+											)}
 										>
 											{member.name}
 										</div>
-										<p class="text-muted-foreground mt-1 text-xs leading-relaxed">
+										<p
+											class="text-muted-foreground mt-1 text-xs leading-relaxed"
+										>
 											{member.description}
 										</p>
 									</div>
@@ -191,10 +208,15 @@
 				<Separator />
 
 				<div class="space-y-3 p-3">
-					<div class="bg-card/65 ring-border/70 flex items-center gap-3 rounded-xl p-3 ring-1">
+					<div
+						class="bg-card/65 ring-border/70 flex items-center gap-3 rounded-xl p-3 ring-1"
+					>
 						<Avatar.Root size="sm">
 							<Avatar.Fallback
-								class={cn('bg-primary/15 text-xs font-semibold text-primary', getNameColor(myName))}
+								class={cn(
+									'bg-primary/15 text-xs font-semibold text-primary',
+									getNameColor(myName),
+								)}
 							>
 								{getMemberInitial(myName)}
 							</Avatar.Fallback>
@@ -233,7 +255,10 @@
 					</Badge>
 				</header>
 
-				<ScrollArea.Root bind:viewportRef={messagesContainer} class="min-h-0 flex-1">
+				<ScrollArea.Root
+					bind:viewportRef={messagesContainer}
+					class="min-h-0 flex-1"
+				>
 					<div class="space-y-4 px-4 py-4 md:px-6">
 						{#each messages as msg (msg.id)}
 							{#if msg.type === 'system'}
@@ -248,16 +273,24 @@
 								<div class="group flex items-start gap-3">
 									<Avatar.Root class="mt-0.5">
 										<Avatar.Fallback
-											class={cn('bg-card text-sm font-semibold', getNameColor(msg.sender ?? ''))}
+											class={cn(
+												'bg-card text-sm font-semibold',
+												getNameColor(msg.sender ?? ''),
+											)}
 										>
 											{getMemberInitial(msg.sender)}
 										</Avatar.Fallback>
 									</Avatar.Root>
 
-									<div class="min-w-0 flex-1 rounded-xl border border-transparent px-1 py-0.5">
+									<div
+										class="min-w-0 flex-1 rounded-xl border border-transparent px-1 py-0.5"
+									>
 										<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
 											<span
-												class={cn('text-sm font-semibold', getNameColor(msg.sender ?? ''))}
+												class={cn(
+													'text-sm font-semibold',
+													getNameColor(msg.sender ?? ''),
+												)}
 											>
 												{msg.sender}
 											</span>
@@ -266,7 +299,9 @@
 											</span>
 										</div>
 
-										<p class="mt-1 break-words text-sm leading-relaxed text-zinc-200">
+										<p
+											class="mt-1 break-words text-sm leading-relaxed text-zinc-200"
+										>
 											{msg.text}
 										</p>
 
@@ -306,7 +341,11 @@
 							placeholder="Type a message..."
 							class="h-10 flex-1 bg-input/30"
 						/>
-						<Button type="submit" class="h-10 px-4" disabled={!messageText.trim()}>
+						<Button
+							type="submit"
+							class="h-10 px-4"
+							disabled={!messageText.trim()}
+						>
 							Send
 						</Button>
 					</div>

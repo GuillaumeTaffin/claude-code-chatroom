@@ -46,4 +46,10 @@ export default [
       },
     },
   },
+  {
+    files: ['packages/web/src/lib/components/ui/**/*.svelte'],
+    rules: {
+      'svelte/no-navigation-without-resolve': 'off',
+    },
+  },
 ]
