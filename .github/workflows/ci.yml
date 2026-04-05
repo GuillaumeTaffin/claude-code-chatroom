@@ -55,3 +55,22 @@ jobs:
 
       - name: Run integration tests
         run: bun run check:test:integration
+
+  ci:
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    needs:
+      - checks-fast
+      - checks-broader
+    steps:
+      - name: Verify workflow results
+        run: |
+          if [ "${{ needs.checks-fast.result }}" != "success" ]; then
+            echo "checks-fast result: ${{ needs.checks-fast.result }}"
+            exit 1
+          fi
+
+          if [ "${{ needs.checks-broader.result }}" != "success" ]; then
+            echo "checks-broader result: ${{ needs.checks-broader.result }}"
+            exit 1
+          fi
