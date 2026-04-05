@@ -84,6 +84,8 @@ describe('websocket handlers', () => {
     const other = createSocket('beta')
     const joining = createSocket('alpha')
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-04T11:59:00.000Z'))
 
     room.addMember({ name: 'beta', description: 'backend agent' })
     room.addMember({ name: 'alpha', description: 'frontend agent' })
@@ -98,18 +100,22 @@ describe('websocket handlers', () => {
         params: {
           name: 'alpha',
           description: 'frontend agent',
+          timestamp: '2026-04-04T11:59:00.000Z',
         },
       }),
     )
     expect(logSpy).toHaveBeenCalledWith(
       '[ws] alpha connected to room "general"',
     )
+    vi.useRealTimers()
   })
 
   it('exposes websocket adapter handlers that delegate to the runtime handlers', () => {
     const room = getOrCreateRoom()
     const socket = createSocket('alpha')
     const remaining = createSocket('beta')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-04T12:10:00.000Z'))
 
     room.addMember({ name: 'alpha', description: 'frontend agent' })
     room.addMember({ name: 'beta', description: 'backend agent' })
@@ -136,6 +142,7 @@ describe('websocket handlers', () => {
         method: 'member_left',
         params: {
           name: 'alpha',
+          timestamp: '2026-04-04T12:10:00.000Z',
         },
       }),
     )
@@ -148,6 +155,7 @@ describe('websocket handlers', () => {
         data: undefined,
       },
     })
+    vi.useRealTimers()
   })
 
   it('rejects invalid websocket payloads', () => {
@@ -361,6 +369,8 @@ describe('websocket handlers', () => {
     const leaving = createSocket('alpha')
     const remaining = createSocket('beta')
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-04T12:15:00.000Z'))
 
     room.addMember({ name: 'alpha', description: 'frontend agent' })
     room.addMember({ name: 'beta', description: 'backend agent' })
@@ -375,6 +385,7 @@ describe('websocket handlers', () => {
         method: 'member_left',
         params: {
           name: 'alpha',
+          timestamp: '2026-04-04T12:15:00.000Z',
         },
       }),
     )
@@ -382,5 +393,6 @@ describe('websocket handlers', () => {
 
     const unknown = createSocket('ghost')
     expect(() => handleClose(unknown)).not.toThrow()
+    vi.useRealTimers()
   })
 })

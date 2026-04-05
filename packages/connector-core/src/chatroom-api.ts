@@ -1,3 +1,5 @@
+import type { ConnectResponse, MembersResponse } from '@chatroom/shared'
+
 export interface ChatroomMember {
   name: string
   description: string
@@ -5,8 +7,8 @@ export interface ChatroomMember {
 }
 
 export interface ChatroomApi {
-  connect(name: string, description: string): Promise<{ channel_id: string }>
-  listMembers(): Promise<{ members: ChatroomMember[] }>
+  connect(name: string, description: string): Promise<ConnectResponse>
+  listMembers(): Promise<MembersResponse>
 }
 
 export interface CreateChatroomApiOptions {
@@ -31,7 +33,7 @@ export function createChatroomApi({
         throw new Error(error.error || response.statusText)
       }
 
-      return (await response.json()) as { channel_id: string }
+      return (await response.json()) as ConnectResponse
     },
 
     async listMembers() {
@@ -40,7 +42,7 @@ export function createChatroomApi({
         throw new Error(response.statusText)
       }
 
-      return (await response.json()) as { members: ChatroomMember[] }
+      return (await response.json()) as MembersResponse
     },
   }
 }

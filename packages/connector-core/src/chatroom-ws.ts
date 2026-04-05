@@ -1,8 +1,12 @@
 import {
   isNotification,
   isResponse,
+  type ChatEvent,
   type JsonRpcMessage,
   type JsonRpcResponse,
+  type MemberJoinedParams,
+  type MemberLeftParams,
+  type NewMessageParams,
 } from '@chatroom/shared'
 import type {
   ConnectorSessionState,
@@ -29,12 +33,30 @@ export interface CreateChatroomWebSocketClientOptions {
   state: ConnectorSessionState
   logger: Pick<Console, 'error'>
   requestTimeoutMs?: number
-  onNotification: (method: string, params: unknown) => Promise<void> | void
+  onEvent: (event: ChatEvent) => Promise<void> | void
+  onClose?: (error: Error) => Promise<void> | void
 }
 
 export interface ChatroomWebSocketClient {
   connect(name: string): Promise<void>
   sendRpcRequest(id: number, request: unknown): Promise<unknown>
+  close(): void
+}
+
+export function normalizeChatEvent(
+  method: string,
+  params: unknown,
+): ChatEvent | null {
+  switch (method) {
+    case 'new_message':
+      return { type: 'message', ...(params as NewMessageParams) }
+    case 'member_joined':
+      return { type: 'member_joined', ...(params as MemberJoinedParams) }
+    case 'member_left':
+      return { type: 'member_left', ...(params as MemberLeftParams) }
+    default:
+      return null
+  }
 }
 
 function clearPendingRequests(
@@ -72,7 +94,8 @@ export function createChatroomWebSocketClient({
   state,
   logger,
   requestTimeoutMs = 10_000,
-  onNotification,
+  onEvent,
+  onClose,
 }: CreateChatroomWebSocketClientOptions): ChatroomWebSocketClient {
   return {
     connect(name: string): Promise<void> {
@@ -93,9 +116,11 @@ export function createChatroomWebSocketClient({
         }
 
         socket.onclose = () => {
+          const closeError = new Error('WebSocket connection closed')
           logger.error('[connector] WebSocket closed')
           state.clearWsConnection()
-          clearPendingRequests(state, new Error('WebSocket connection closed'))
+          clearPendingRequests(state, closeError)
+          void onClose?.(closeError)
         }
 
         socket.onmessage = (event) => {
@@ -108,7 +133,13 @@ export function createChatroomWebSocketClient({
             }
 
             if (isNotification(message)) {
-              void onNotification(message.method, message.params)
+              const normalizedEvent = normalizeChatEvent(
+                message.method,
+                message.params,
+              )
+              if (normalizedEvent) {
+                void onEvent(normalizedEvent)
+              }
             }
           } catch (error) {
             logger.error('[connector] Failed to parse WS message:', error)
@@ -138,6 +169,10 @@ export function createChatroomWebSocketClient({
         state.pendingRequests.set(id, pendingRequest)
         state.wsConnection.send(JSON.stringify(request))
       })
+    },
+
+    close() {
+      state.wsConnection?.close?.()
     },
   }
 }

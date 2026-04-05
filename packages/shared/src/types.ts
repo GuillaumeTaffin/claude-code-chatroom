@@ -42,9 +42,30 @@ export interface NewMessageParams {
 export interface MemberJoinedParams {
   name: string
   description: string
+  timestamp: string
 }
 
 /** Server → Client: a member left the room */
 export interface MemberLeftParams {
   name: string
+  timestamp: string
 }
+
+// ── Normalized chat events ──────────────────────────────────────────────────
+
+export interface ChatMessageEvent extends NewMessageParams {
+  type: 'message'
+}
+
+export interface ChatMemberJoinedEvent extends MemberJoinedParams {
+  type: 'member_joined'
+}
+
+export interface ChatMemberLeftEvent extends MemberLeftParams {
+  type: 'member_left'
+}
+
+export type ChatEvent =
+  | ChatMessageEvent
+  | ChatMemberJoinedEvent
+  | ChatMemberLeftEvent

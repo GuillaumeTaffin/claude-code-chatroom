@@ -1,12 +1,14 @@
 # claude-code-chatroom
 
-Minimal chatroom for humans and Claude Code agents.
+Minimal chatroom for humans and coding agents.
 
-The project is split into four parts:
+The project is split into six parts:
 
 - `packages/server`: Bun + Elysia backend that exposes the REST and WebSocket chatroom API.
 - `packages/web`: SvelteKit UI for joining the room, sending messages, and viewing members.
-- `packages/connector`: MCP server that lets Claude-style agents join the room with tools like `connect_chat`, `send_message`, and `list_members`.
+- `packages/connector-core`: shared chatroom transport/runtime used by agent-specific connectors.
+- `packages/connector`: Claude adapter that forwards room activity through Claude channel notifications.
+- `packages/connector-codex`: Codex adapter that exposes MCP tools including `wait_for_events`.
 - `packages/shared`: shared JSON-RPC and type definitions used by the other packages.
 
 ## Development
@@ -41,6 +43,12 @@ Run only the MCP connector:
 bun run dev:connector
 ```
 
+Run the Codex MCP connector:
+
+```sh
+bun run dev:connector:codex
+```
+
 Start a Claude Code session with the preview channel enabled from the repo root:
 
 ```sh
@@ -56,6 +64,14 @@ If you want to register the connector manually instead of using `.mcp.json`, run
 claude mcp add chatroom --scope project -- bun ./packages/connector/src/index.ts
 ```
 
+To register the Codex connector manually, run:
+
+```sh
+codex mcp add chatroom -- bun ./packages/connector-codex/src/index.ts
+```
+
+Inside Codex, call `connect_chat` first, then use `wait_for_events` to receive chatroom activity and `send_message` to reply. The default wait timeout is `30000ms`, and Codex MCP servers have a per-tool timeout budget that defaults to `60` seconds.
+
 ## Useful Commands
 
 - `bun run check:all` - run the full workspace validation suite.
@@ -69,7 +85,9 @@ claude mcp add chatroom --scope project -- bun ./packages/connector/src/index.ts
 - `bun run check:format` - run formatting checks in every package.
 - `bun run check:shared` - run all checks for `packages/shared`.
 - `bun run check:server` - run all checks for `packages/server`.
+- `bun run check:connector-core` - run all checks for `packages/connector-core`.
 - `bun run check:connector` - run all checks for `packages/connector`.
+- `bun run check:connector-codex` - run all checks for `packages/connector-codex`.
 - `bun run check:web` - run all checks for `packages/web`.
 - `bun run --filter @chatroom/web build` - build the web app for production.
 - `bun run --filter @chatroom/web check:types` - run Svelte type checks.
@@ -81,5 +99,6 @@ claude mcp add chatroom --scope project -- bun ./packages/connector/src/index.ts
 
 - The backend listens on `http://localhost:3000` by default.
 - The web UI connects to `http://localhost:3000` and `ws://localhost:3000`.
+- `.mcp.json` remains Claude-specific in this phase. Codex setup is documented as a local `codex mcp add ...` command.
 - Coverage is enforced at `100%` from fast `*.unit.test.ts` suites only. Component and integration tests run separately and do not contribute to the coverage gate.
 - Agent-facing protocol details and working rules live in [AGENTS.md](./AGENTS.md).

@@ -1,46 +1,62 @@
 #!/usr/bin/env bun
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { createChatroomApi } from './chatroom-api.js'
 import {
-  createChatroomWebSocketClient,
+  createChatroomClient,
   type ConnectorSocketConstructor,
-} from './chatroom-ws.js'
-import { getServerUrl, getWsUrl } from './config.js'
+} from '@chatroom/connector-core'
 import { createMcpServer } from './mcp-server.js'
 import { forwardServerNotification } from './notification-forwarder.js'
-import { createConnectorSessionState } from './session-state.js'
 import { createToolHandlers } from './tool-handlers.js'
 
-const serverUrl = getServerUrl(process.env)
-const wsUrl = getWsUrl(serverUrl)
-const state = createConnectorSessionState()
-const api = createChatroomApi({ fetchImpl: fetch, serverUrl })
-
 let mcp!: ReturnType<typeof createMcpServer>
-
-const wsClient = createChatroomWebSocketClient({
+const client = createChatroomClient({
+  env: process.env,
+  fetchImpl: fetch,
   WebSocketImpl: WebSocket as unknown as ConnectorSocketConstructor,
-  wsUrl,
-  state,
   logger: console,
-  onNotification: (method, params) =>
-    forwardServerNotification(
-      {
-        notify: (notification) => mcp.notification(notification),
-        logger: console,
-      },
-      method,
-      params,
-    ),
 })
-
-const handlers = createToolHandlers({
-  api,
-  wsClient,
-  state,
-})
+const handlers = createToolHandlers({ client })
 
 mcp = createMcpServer(handlers)
+
+const originalConnect = client.connect.bind(client)
+client.connect = async (name, description) => {
+  const channel = await originalConnect(name, description)
+  const waitForEvents = async () => {
+    while (client.isConnected) {
+      try {
+        const result = await client.waitForEvents({
+          timeoutMs: 55_000,
+          maxEvents: 100,
+        })
+
+        if (result.timedOut) {
+          continue
+        }
+
+        for (const event of result.events) {
+          await forwardServerNotification(
+            {
+              notify: (notification) => mcp.notification(notification),
+              logger: console,
+            },
+            event,
+          )
+        }
+      } catch (error) {
+        if ((error as Error).message === 'WebSocket connection closed') {
+          break
+        }
+
+        console.error('[connector] Failed to forward notification:', error)
+        break
+      }
+    }
+  }
+
+  void waitForEvents()
+  return channel
+}
 
 await mcp.connect(new StdioServerTransport())
 console.error('[connector] MCP channel server started')

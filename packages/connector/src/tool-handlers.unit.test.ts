@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createConnectorSessionState } from './session-state.js'
 import { createToolHandlers, formatMemberList } from './tool-handlers.js'
 
 describe('tool handlers', () => {
@@ -13,19 +12,13 @@ describe('tool handlers', () => {
   })
 
   it('returns already connected when a session exists', async () => {
-    const state = createConnectorSessionState()
-    state.setIdentity('alpha', 'general')
-
     const handlers = createToolHandlers({
-      api: {
+      client: {
+        connectedName: 'alpha',
         connect: vi.fn(),
+        sendMessage: vi.fn(),
         listMembers: vi.fn(),
-      },
-      wsClient: {
-        connect: vi.fn(),
-        sendRpcRequest: vi.fn(),
-      },
-      state,
+      } as never,
     })
 
     await expect(
@@ -35,18 +28,14 @@ describe('tool handlers', () => {
     })
   })
 
-  it('connects successfully and stores session identity', async () => {
-    const state = createConnectorSessionState()
+  it('connects successfully', async () => {
     const handlers = createToolHandlers({
-      api: {
+      client: {
+        connectedName: null,
         connect: vi.fn().mockResolvedValue({ channel_id: 'general' }),
+        sendMessage: vi.fn(),
         listMembers: vi.fn(),
-      },
-      wsClient: {
-        connect: vi.fn().mockResolvedValue(undefined),
-        sendRpcRequest: vi.fn(),
-      },
-      state,
+      } as never,
     })
 
     const result = await handlers.connectChat({
@@ -62,22 +51,16 @@ describe('tool handlers', () => {
         },
       ],
     })
-    expect(state.connectedName).toBe('alpha')
-    expect(state.channelId).toBe('general')
   })
 
   it('returns connection errors', async () => {
-    const state = createConnectorSessionState()
     const handlers = createToolHandlers({
-      api: {
+      client: {
+        connectedName: null,
         connect: vi.fn().mockRejectedValue(new Error('connect failed')),
+        sendMessage: vi.fn(),
         listMembers: vi.fn(),
-      },
-      wsClient: {
-        connect: vi.fn(),
-        sendRpcRequest: vi.fn(),
-      },
-      state,
+      } as never,
     })
 
     await expect(
@@ -86,42 +69,16 @@ describe('tool handlers', () => {
       content: [{ type: 'text', text: 'Connection error: connect failed' }],
       isError: true,
     })
-    expect(state.connectedName).toBeNull()
   })
 
-  it('validates send_message preconditions and failures', async () => {
-    const state = createConnectorSessionState()
+  it('returns send_message failures from the shared client', async () => {
     const handlers = createToolHandlers({
-      api: {
+      client: {
+        connectedName: 'alpha',
         connect: vi.fn(),
+        sendMessage: vi.fn().mockRejectedValue(new Error('socket failed')),
         listMembers: vi.fn(),
-      },
-      wsClient: {
-        connect: vi.fn(),
-        sendRpcRequest: vi.fn().mockRejectedValue(new Error('socket failed')),
-      },
-      state,
-    })
-
-    await expect(
-      handlers.sendMessage({ channel_id: 'general', text: 'hello' }),
-    ).resolves.toEqual({
-      content: [
-        { type: 'text', text: 'Not connected. Call connect_chat first.' },
-      ],
-      isError: true,
-    })
-
-    state.setIdentity('alpha', 'general')
-    state.setWsConnection({ send: vi.fn() })
-
-    await expect(
-      handlers.sendMessage({ channel_id: 'random', text: 'hello' }),
-    ).resolves.toEqual({
-      content: [
-        { type: 'text', text: 'Invalid channel_id. Expected "general".' },
-      ],
-      isError: true,
+      } as never,
     })
 
     await expect(
@@ -132,22 +89,16 @@ describe('tool handlers', () => {
     })
   })
 
-  it('sends messages successfully with default mentions', async () => {
-    const state = createConnectorSessionState()
-    state.setIdentity('alpha', 'general')
-    state.setWsConnection({ send: vi.fn() })
-    const sendRpcRequest = vi.fn().mockResolvedValue({ ok: true })
+  it('sends messages successfully', async () => {
+    const sendMessage = vi.fn().mockResolvedValue({ ok: true })
 
     const handlers = createToolHandlers({
-      api: {
+      client: {
+        connectedName: 'alpha',
         connect: vi.fn(),
+        sendMessage,
         listMembers: vi.fn(),
-      },
-      wsClient: {
-        connect: vi.fn(),
-        sendRpcRequest,
-      },
-      state,
+      } as never,
     })
 
     await expect(
@@ -156,22 +107,18 @@ describe('tool handlers', () => {
       content: [{ type: 'text', text: 'Message sent.' }],
     })
 
-    expect(sendRpcRequest).toHaveBeenCalledWith(1, {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'send_message',
-      params: {
-        channel_id: 'general',
-        text: 'hello',
-        mentions: [],
-      },
+    expect(sendMessage).toHaveBeenCalledWith({
+      channel_id: 'general',
+      text: 'hello',
     })
   })
 
   it('lists members for empty, populated, and failed responses', async () => {
     const handlers = createToolHandlers({
-      api: {
+      client: {
+        connectedName: null,
         connect: vi.fn(),
+        sendMessage: vi.fn(),
         listMembers: vi
           .fn()
           .mockResolvedValueOnce({ members: [] })
@@ -185,12 +132,7 @@ describe('tool handlers', () => {
             ],
           })
           .mockRejectedValueOnce(new Error('members failed')),
-      },
-      wsClient: {
-        connect: vi.fn(),
-        sendRpcRequest: vi.fn(),
-      },
-      state: createConnectorSessionState(),
+      } as never,
     })
 
     await expect(handlers.listMembers()).resolves.toEqual({
