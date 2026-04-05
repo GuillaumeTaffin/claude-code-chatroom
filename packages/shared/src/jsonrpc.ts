@@ -26,7 +26,10 @@ export interface JsonRpcNotification {
   params?: unknown
 }
 
-export type JsonRpcMessage = JsonRpcRequest | JsonRpcResponse | JsonRpcNotification
+export type JsonRpcMessage =
+  | JsonRpcRequest
+  | JsonRpcResponse
+  | JsonRpcNotification
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -34,7 +37,9 @@ export function isRequest(msg: JsonRpcMessage): msg is JsonRpcRequest {
   return 'method' in msg && 'id' in msg
 }
 
-export function isNotification(msg: JsonRpcMessage): msg is JsonRpcNotification {
+export function isNotification(
+  msg: JsonRpcMessage,
+): msg is JsonRpcNotification {
   return 'method' in msg && !('id' in msg)
 }
 
@@ -42,19 +47,34 @@ export function isResponse(msg: JsonRpcMessage): msg is JsonRpcResponse {
   return 'id' in msg && !('method' in msg)
 }
 
-export function makeRequest(id: string | number, method: string, params?: unknown): JsonRpcRequest {
+export function makeRequest(
+  id: string | number,
+  method: string,
+  params?: unknown,
+): JsonRpcRequest {
   return { jsonrpc: '2.0', id, method, params }
 }
 
-export function makeResponse(id: string | number, result: unknown): JsonRpcResponse {
+export function makeResponse(
+  id: string | number,
+  result: unknown,
+): JsonRpcResponse {
   return { jsonrpc: '2.0', id, result }
 }
 
-export function makeErrorResponse(id: string | number, code: number, message: string, data?: unknown): JsonRpcResponse {
+export function makeErrorResponse(
+  id: string | number,
+  code: number,
+  message: string,
+  data?: unknown,
+): JsonRpcResponse {
   return { jsonrpc: '2.0', id, error: { code, message, data } }
 }
 
-export function makeNotification(method: string, params?: unknown): JsonRpcNotification {
+export function makeNotification(
+  method: string,
+  params?: unknown,
+): JsonRpcNotification {
   return { jsonrpc: '2.0', method, params }
 }
 

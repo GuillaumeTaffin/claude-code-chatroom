@@ -112,7 +112,9 @@ export function getOrCreateRoom(channelId: string = DEFAULT_CHANNEL_ID): Room {
   return room
 }
 
-export function getRoom(channelId: string = DEFAULT_CHANNEL_ID): Room | undefined {
+export function getRoom(
+  channelId: string = DEFAULT_CHANNEL_ID,
+): Room | undefined {
   return rooms.get(channelId)
 }
 
