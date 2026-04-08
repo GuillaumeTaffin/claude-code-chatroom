@@ -6,17 +6,10 @@ import {
   NOT_CONNECTED,
   makeRequest,
 } from '@chatroom/shared'
-import { getOrCreateRoom } from './state.js'
+import { createProject, getProjectRoom, resetState } from './state.js'
 import { handleClose, handleMessage, handleOpen, wsHandlers } from './ws.js'
 
-function clearDefaultRoom() {
-  const room = getOrCreateRoom()
-  for (const member of room.getMembers()) {
-    room.removeMember(member.name)
-  }
-}
-
-function createSocket(name: string) {
+function createSocket(name: string, projectId = '') {
   const send = vi.fn()
   const raw = {
     send,
@@ -29,6 +22,7 @@ function createSocket(name: string) {
     data: {
       query: {
         name,
+        project_id: projectId,
       },
     },
   }
@@ -36,12 +30,33 @@ function createSocket(name: string) {
 
 describe('websocket handlers', () => {
   beforeEach(() => {
-    clearDefaultRoom()
+    resetState()
     vi.restoreAllMocks()
   })
 
-  it('rejects unregistered members on open', () => {
+  it('rejects missing project ids on open', () => {
     const socket = createSocket('alpha')
+
+    handleOpen(socket)
+
+    expect(socket.send).toHaveBeenCalledWith({
+      jsonrpc: '2.0',
+      id: 0,
+      error: {
+        code: INVALID_PARAMS,
+        message: 'project_id is required',
+        data: undefined,
+      },
+    })
+    expect(socket.close).toHaveBeenCalled()
+  })
+
+  it('rejects unregistered members on open', () => {
+    const project = createProject({
+      name: 'Chatroom',
+      root_path: '/workspace/chatroom',
+    })
+    const socket = createSocket('alpha', project.id)
 
     handleOpen(socket)
 
@@ -57,10 +72,31 @@ describe('websocket handlers', () => {
     expect(socket.close).toHaveBeenCalled()
   })
 
+  it('rejects unknown project ids on open', () => {
+    const socket = createSocket('alpha', 'missing-project')
+
+    handleOpen(socket)
+
+    expect(socket.send).toHaveBeenCalledWith({
+      jsonrpc: '2.0',
+      id: 0,
+      error: {
+        code: INVALID_CHANNEL,
+        message: 'Invalid project_id "missing-project"',
+        data: undefined,
+      },
+    })
+    expect(socket.close).toHaveBeenCalled()
+  })
+
   it('rejects duplicate websocket connections on open', () => {
-    const room = getOrCreateRoom()
-    const existing = createSocket('alpha')
-    const socket = createSocket('alpha')
+    const project = createProject({
+      name: 'Chatroom',
+      root_path: '/workspace/chatroom',
+    })
+    const room = getProjectRoom(project.id)!
+    const existing = createSocket('alpha', project.id)
+    const socket = createSocket('alpha', project.id)
 
     room.addMember({ name: 'alpha', description: 'frontend agent' })
     room.registerWebSocket(existing.raw, 'alpha')
@@ -80,9 +116,13 @@ describe('websocket handlers', () => {
   })
 
   it('broadcasts member joins to other sockets', () => {
-    const room = getOrCreateRoom()
-    const other = createSocket('beta')
-    const joining = createSocket('alpha')
+    const project = createProject({
+      name: 'Chatroom',
+      root_path: '/workspace/chatroom',
+    })
+    const room = getProjectRoom(project.id)!
+    const other = createSocket('beta', project.id)
+    const joining = createSocket('alpha', project.id)
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-04-04T11:59:00.000Z'))
@@ -105,15 +145,19 @@ describe('websocket handlers', () => {
       }),
     )
     expect(logSpy).toHaveBeenCalledWith(
-      '[ws] alpha connected to room "general"',
+      `[ws] alpha connected to room "${project.channel_id}"`,
     )
     vi.useRealTimers()
   })
 
   it('exposes websocket adapter handlers that delegate to the runtime handlers', () => {
-    const room = getOrCreateRoom()
-    const socket = createSocket('alpha')
-    const remaining = createSocket('beta')
+    const project = createProject({
+      name: 'Chatroom',
+      root_path: '/workspace/chatroom',
+    })
+    const room = getProjectRoom(project.id)!
+    const socket = createSocket('alpha', project.id)
+    const remaining = createSocket('beta', project.id)
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-04-04T12:10:00.000Z'))
 
@@ -159,8 +203,12 @@ describe('websocket handlers', () => {
   })
 
   it('rejects invalid websocket payloads', () => {
-    const room = getOrCreateRoom()
-    const socket = createSocket('alpha')
+    const project = createProject({
+      name: 'Chatroom',
+      root_path: '/workspace/chatroom',
+    })
+    const room = getProjectRoom(project.id)!
+    const socket = createSocket('alpha', project.id)
 
     room.addMember({ name: 'alpha', description: 'frontend agent' })
     room.registerWebSocket(socket.raw, 'alpha')
@@ -187,16 +235,42 @@ describe('websocket handlers', () => {
     })
   })
 
+  it('rejects messages for unknown project ids', () => {
+    const socket = createSocket('alpha', 'missing-project')
+
+    handleMessage(
+      socket,
+      makeRequest(10, 'send_message', {
+        channel_id: 'missing-project',
+        text: 'hello',
+      }),
+    )
+
+    expect(socket.send).toHaveBeenCalledWith({
+      jsonrpc: '2.0',
+      id: 10,
+      error: {
+        code: INVALID_CHANNEL,
+        message: 'Invalid project_id "missing-project"',
+        data: undefined,
+      },
+    })
+  })
+
   it('rejects invalid send_message requests', () => {
-    const room = getOrCreateRoom()
-    const socket = createSocket('alpha')
+    const project = createProject({
+      name: 'Chatroom',
+      root_path: '/workspace/chatroom',
+    })
+    const room = getProjectRoom(project.id)!
+    const socket = createSocket('alpha', project.id)
 
     room.addMember({ name: 'alpha', description: 'frontend agent' })
     room.registerWebSocket(socket.raw, 'alpha')
 
     handleMessage(
       socket,
-      makeRequest(1, 'send_message', { channel_id: 'general' }),
+      makeRequest(1, 'send_message', { channel_id: project.channel_id }),
     )
     expect(socket.send).toHaveBeenNthCalledWith(1, {
       jsonrpc: '2.0',
@@ -227,15 +301,19 @@ describe('websocket handlers', () => {
   })
 
   it('rejects messages from members without an active websocket', () => {
-    const room = getOrCreateRoom()
-    const socket = createSocket('alpha')
+    const project = createProject({
+      name: 'Chatroom',
+      root_path: '/workspace/chatroom',
+    })
+    const room = getProjectRoom(project.id)!
+    const socket = createSocket('alpha', project.id)
 
     room.addMember({ name: 'alpha', description: 'frontend agent' })
 
     handleMessage(
       socket,
       makeRequest(3, 'send_message', {
-        channel_id: 'general',
+        channel_id: project.channel_id,
         text: 'hello',
       }),
     )
@@ -252,9 +330,13 @@ describe('websocket handlers', () => {
   })
 
   it('broadcasts valid messages and acknowledges the sender', () => {
-    const room = getOrCreateRoom()
-    const sender = createSocket('alpha')
-    const receiver = createSocket('beta')
+    const project = createProject({
+      name: 'Chatroom',
+      root_path: '/workspace/chatroom',
+    })
+    const room = getProjectRoom(project.id)!
+    const sender = createSocket('alpha', project.id)
+    const receiver = createSocket('beta', project.id)
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-04-04T12:00:00.000Z'))
@@ -267,7 +349,7 @@ describe('websocket handlers', () => {
     handleMessage(
       sender,
       makeRequest(4, 'send_message', {
-        channel_id: 'general',
+        channel_id: project.channel_id,
         text: 'hello room',
         mentions: ['beta'],
       }),
@@ -299,9 +381,13 @@ describe('websocket handlers', () => {
   })
 
   it('defaults missing mentions to an empty list', () => {
-    const room = getOrCreateRoom()
-    const sender = createSocket('alpha')
-    const receiver = createSocket('beta')
+    const project = createProject({
+      name: 'Chatroom',
+      root_path: '/workspace/chatroom',
+    })
+    const room = getProjectRoom(project.id)!
+    const sender = createSocket('alpha', project.id)
+    const receiver = createSocket('beta', project.id)
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-04-04T12:05:00.000Z'))
@@ -314,7 +400,7 @@ describe('websocket handlers', () => {
     handleMessage(
       sender,
       makeRequest(6, 'send_message', {
-        channel_id: 'general',
+        channel_id: project.channel_id,
         text: 'hello without mentions',
       }),
     )
@@ -345,8 +431,12 @@ describe('websocket handlers', () => {
   })
 
   it('rejects unknown methods', () => {
-    const room = getOrCreateRoom()
-    const socket = createSocket('alpha')
+    const project = createProject({
+      name: 'Chatroom',
+      root_path: '/workspace/chatroom',
+    })
+    const room = getProjectRoom(project.id)!
+    const socket = createSocket('alpha', project.id)
 
     room.addMember({ name: 'alpha', description: 'frontend agent' })
     room.registerWebSocket(socket.raw, 'alpha')
@@ -365,9 +455,13 @@ describe('websocket handlers', () => {
   })
 
   it('broadcasts member leave events on close and ignores unknown sockets', () => {
-    const room = getOrCreateRoom()
-    const leaving = createSocket('alpha')
-    const remaining = createSocket('beta')
+    const project = createProject({
+      name: 'Chatroom',
+      root_path: '/workspace/chatroom',
+    })
+    const room = getProjectRoom(project.id)!
+    const leaving = createSocket('alpha', project.id)
+    const remaining = createSocket('beta', project.id)
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-04-04T12:15:00.000Z'))
@@ -391,8 +485,57 @@ describe('websocket handlers', () => {
     )
     expect(logSpy).toHaveBeenCalledWith('[ws] alpha disconnected')
 
-    const unknown = createSocket('ghost')
+    const unknown = createSocket('ghost', project.id)
     expect(() => handleClose(unknown)).not.toThrow()
+    vi.useRealTimers()
+  })
+
+  it('keeps websocket traffic isolated to the selected project', () => {
+    const alphaProject = createProject({
+      name: 'Alpha',
+      root_path: '/workspace/alpha',
+    })
+    const betaProject = createProject({
+      name: 'Beta',
+      root_path: '/workspace/beta',
+    })
+    const alphaSender = createSocket('alpha', alphaProject.id)
+    const alphaReceiver = createSocket('beta', alphaProject.id)
+    const betaReceiver = createSocket('gamma', betaProject.id)
+    const alphaRoom = getProjectRoom(alphaProject.id)!
+    const betaRoom = getProjectRoom(betaProject.id)!
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-04T12:20:00.000Z'))
+
+    alphaRoom.addMember({ name: 'alpha', description: 'alpha sender' })
+    alphaRoom.addMember({ name: 'beta', description: 'alpha receiver' })
+    betaRoom.addMember({ name: 'gamma', description: 'beta receiver' })
+    alphaRoom.registerWebSocket(alphaSender.raw, 'alpha')
+    alphaRoom.registerWebSocket(alphaReceiver.raw, 'beta')
+    betaRoom.registerWebSocket(betaReceiver.raw, 'gamma')
+
+    handleMessage(
+      alphaSender,
+      makeRequest(7, 'send_message', {
+        channel_id: alphaProject.channel_id,
+        text: 'alpha only',
+      }),
+    )
+
+    expect(alphaReceiver.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'new_message',
+        params: {
+          sender: 'alpha',
+          sender_role: 'alpha sender',
+          text: 'alpha only',
+          mentions: [],
+          timestamp: '2026-04-04T12:20:00.000Z',
+        },
+      }),
+    )
+    expect(betaReceiver.send).not.toHaveBeenCalled()
     vi.useRealTimers()
   })
 })

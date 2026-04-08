@@ -103,11 +103,14 @@ describe('chatroom websocket client', () => {
       onEvent: vi.fn(),
     })
 
-    const connectPromise = client.connect('alpha')
+    const connectPromise = client.connect('alpha', 'project-1')
     MockWebSocket.instances[0]?.emitOpen()
     await connectPromise
 
     expect(state.wsConnection).toBe(MockWebSocket.instances[0])
+    expect(MockWebSocket.instances[0]?.url).toBe(
+      'ws://localhost:3000/ws?name=alpha&project_id=project-1',
+    )
   })
 
   it('rejects failed websocket connections', async () => {
@@ -119,7 +122,7 @@ describe('chatroom websocket client', () => {
       onEvent: vi.fn(),
     })
 
-    const connectPromise = client.connect('alpha')
+    const connectPromise = client.connect('alpha', 'project-1')
     MockWebSocket.instances[0]?.emitError()
 
     await expect(connectPromise).rejects.toThrow('WebSocket connection failed')
@@ -135,7 +138,7 @@ describe('chatroom websocket client', () => {
       onEvent: vi.fn(),
     })
 
-    const connectPromise = client.connect('alpha')
+    const connectPromise = client.connect('alpha', 'project-1')
     MockWebSocket.instances[0]?.emitOpen()
     await connectPromise
 
@@ -170,7 +173,7 @@ describe('chatroom websocket client', () => {
       onEvent: vi.fn(),
     })
 
-    const connectPromise = client.connect('alpha')
+    const connectPromise = client.connect('alpha', 'project-1')
     MockWebSocket.instances[0]?.emitOpen()
     await connectPromise
 
@@ -204,7 +207,7 @@ describe('chatroom websocket client', () => {
       client.sendRpcRequest(1, { jsonrpc: '2.0', id: 1, method: 'ping' }),
     ).rejects.toThrow('WebSocket not connected')
 
-    const connectPromise = client.connect('alpha')
+    const connectPromise = client.connect('alpha', 'project-1')
     MockWebSocket.instances[0]?.emitOpen()
     await connectPromise
 
@@ -234,7 +237,7 @@ describe('chatroom websocket client', () => {
       onClose,
     })
 
-    const connectPromise = client.connect('alpha')
+    const connectPromise = client.connect('alpha', 'project-1')
     MockWebSocket.instances[0]?.emitOpen()
     await connectPromise
 
@@ -283,7 +286,7 @@ describe('chatroom websocket client', () => {
       onEvent,
     })
 
-    const connectPromise = client.connect('alpha')
+    const connectPromise = client.connect('alpha', 'project-1')
     MockWebSocket.instances[0]?.emitOpen()
     await connectPromise
 
@@ -321,7 +324,7 @@ describe('chatroom websocket client', () => {
       onEvent: vi.fn(),
     })
 
-    const connectPromise = client.connect('alpha')
+    const connectPromise = client.connect('alpha', 'project-1')
     MockWebSocket.instances[0]?.emitOpen()
     await connectPromise
 

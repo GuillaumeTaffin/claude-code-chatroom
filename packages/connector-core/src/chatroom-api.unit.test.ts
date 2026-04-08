@@ -18,10 +18,10 @@ function createJsonResponse({
 }
 
 describe('chatroom api', () => {
-  it('connects to the server and returns the channel id', async () => {
+  it('connects to the server with project context and returns it', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       createJsonResponse({
-        json: { channel_id: 'general' },
+        json: { project_id: 'project-1', channel_id: 'project-1' },
       }),
     )
 
@@ -30,8 +30,20 @@ describe('chatroom api', () => {
       serverUrl: 'http://localhost:3000',
     })
 
-    await expect(api.connect('alpha', 'frontend agent')).resolves.toEqual({
-      channel_id: 'general',
+    await expect(
+      api.connect('alpha', 'frontend agent', 'project-1'),
+    ).resolves.toEqual({
+      project_id: 'project-1',
+      channel_id: 'project-1',
+    })
+    expect(fetchImpl).toHaveBeenCalledWith('http://localhost:3000/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'alpha',
+        description: 'frontend agent',
+        project_id: 'project-1',
+      }),
     })
   })
 
@@ -47,9 +59,68 @@ describe('chatroom api', () => {
       serverUrl: 'http://localhost:3000',
     })
 
-    await expect(api.connect('alpha', 'frontend agent')).rejects.toThrow(
-      'name already taken',
+    await expect(
+      api.connect('alpha', 'frontend agent', 'project-1'),
+    ).rejects.toThrow('name already taken')
+  })
+
+  it('connects with run_id when provided', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      createJsonResponse({
+        json: {
+          project_id: 'project-1',
+          channel_id: 'run-channel-1',
+          run_id: 'run-1',
+        },
+      }),
     )
+
+    const api = createChatroomApi({
+      fetchImpl,
+      serverUrl: 'http://localhost:3000',
+    })
+
+    await expect(
+      api.connect('alpha', 'frontend agent', 'project-1', 'run-1'),
+    ).resolves.toEqual({
+      project_id: 'project-1',
+      channel_id: 'run-channel-1',
+      run_id: 'run-1',
+    })
+    expect(fetchImpl).toHaveBeenCalledWith('http://localhost:3000/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'alpha',
+        description: 'frontend agent',
+        project_id: 'project-1',
+        run_id: 'run-1',
+      }),
+    })
+  })
+
+  it('omits run_id from connect request when not provided', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      createJsonResponse({
+        json: { project_id: 'project-1', channel_id: 'project-1' },
+      }),
+    )
+
+    const api = createChatroomApi({
+      fetchImpl,
+      serverUrl: 'http://localhost:3000',
+    })
+
+    await api.connect('alpha', 'frontend agent', 'project-1')
+    expect(fetchImpl).toHaveBeenCalledWith('http://localhost:3000/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'alpha',
+        description: 'frontend agent',
+        project_id: 'project-1',
+      }),
+    })
   })
 
   it('falls back to the HTTP status text when a connect error payload is empty', async () => {
@@ -64,38 +135,45 @@ describe('chatroom api', () => {
       serverUrl: 'http://localhost:3000',
     })
 
-    await expect(api.connect('alpha', 'frontend agent')).rejects.toThrow(
-      'Bad Request',
-    )
+    await expect(
+      api.connect('alpha', 'frontend agent', 'project-1'),
+    ).rejects.toThrow('Bad Request')
   })
 
-  it('lists chatroom members', async () => {
+  it('lists chatroom members for the selected project', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      createJsonResponse({
+        json: {
+          project_id: 'project-1',
+          members: [
+            {
+              name: 'alpha',
+              description: 'frontend agent',
+              channel_id: 'project-1',
+            },
+          ],
+        },
+      }),
+    )
+
     const api = createChatroomApi({
-      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(
-        createJsonResponse({
-          json: {
-            members: [
-              {
-                name: 'alpha',
-                description: 'frontend agent',
-                channel_id: 'general',
-              },
-            ],
-          },
-        }),
-      ),
+      fetchImpl,
       serverUrl: 'http://localhost:3000',
     })
 
-    await expect(api.listMembers()).resolves.toEqual({
+    await expect(api.listMembers('project-1')).resolves.toEqual({
+      project_id: 'project-1',
       members: [
         {
           name: 'alpha',
           description: 'frontend agent',
-          channel_id: 'general',
+          channel_id: 'project-1',
         },
       ],
     })
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://localhost:3000/members?project_id=project-1',
+    )
   })
 
   it('throws on member list failures', async () => {
@@ -110,6 +188,72 @@ describe('chatroom api', () => {
       serverUrl: 'http://localhost:3000',
     })
 
-    await expect(api.listMembers()).rejects.toThrow('Service Unavailable')
+    await expect(api.listMembers('project-1')).rejects.toThrow(
+      'Service Unavailable',
+    )
+  })
+
+  it('connects with runtime identity', async () => {
+    const runtime = {
+      runtime_id: 'claude',
+      runtime_version: null,
+      capabilities: {
+        can_stream_events: true,
+        can_use_tools: true,
+        can_manage_files: true,
+        can_execute_commands: true,
+      },
+    }
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      createJsonResponse({
+        json: {
+          project_id: 'project-1',
+          channel_id: 'project-1',
+          runtime,
+        },
+      }),
+    )
+
+    const api = createChatroomApi({
+      fetchImpl,
+      serverUrl: 'http://localhost:3000',
+    })
+
+    await expect(
+      api.connect('alpha', 'claude agent', 'project-1', undefined, runtime),
+    ).resolves.toEqual({
+      project_id: 'project-1',
+      channel_id: 'project-1',
+      runtime,
+    })
+    expect(fetchImpl).toHaveBeenCalledWith('http://localhost:3000/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'alpha',
+        description: 'claude agent',
+        project_id: 'project-1',
+        runtime,
+      }),
+    })
+  })
+
+  it('omits runtime from connect request when not provided', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      createJsonResponse({
+        json: { project_id: 'project-1', channel_id: 'project-1' },
+      }),
+    )
+
+    const api = createChatroomApi({
+      fetchImpl,
+      serverUrl: 'http://localhost:3000',
+    })
+
+    await api.connect('alpha', 'frontend agent', 'project-1')
+    const body = JSON.parse(
+      (fetchImpl.mock.calls[0][1] as { body: string }).body,
+    )
+    expect(body.runtime).toBeUndefined()
   })
 })

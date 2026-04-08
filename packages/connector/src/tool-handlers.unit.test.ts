@@ -1,5 +1,17 @@
+import type { RuntimeIdentity } from '@chatroom/shared'
 import { describe, expect, it, vi } from 'vitest'
 import { createToolHandlers, formatMemberList } from './tool-handlers.js'
+
+const CLAUDE_RUNTIME: RuntimeIdentity = {
+  runtime_id: 'claude',
+  runtime_version: null,
+  capabilities: {
+    can_stream_events: true,
+    can_use_tools: true,
+    can_manage_files: true,
+    can_execute_commands: true,
+  },
+}
 
 describe('tool handlers', () => {
   it('formats member lists for MCP output', () => {
@@ -29,10 +41,13 @@ describe('tool handlers', () => {
   })
 
   it('connects successfully', async () => {
+    const connect = vi
+      .fn()
+      .mockResolvedValue({ project_id: 'project-1', channel_id: 'project-1' })
     const handlers = createToolHandlers({
       client: {
         connectedName: null,
-        connect: vi.fn().mockResolvedValue({ channel_id: 'general' }),
+        connect,
         sendMessage: vi.fn(),
         listMembers: vi.fn(),
       } as never,
@@ -41,16 +56,63 @@ describe('tool handlers', () => {
     const result = await handlers.connectChat({
       name: 'alpha',
       description: 'frontend agent',
+      project_id: 'project-1',
     })
 
     expect(result).toEqual({
       content: [
         {
           type: 'text',
-          text: 'Connected to chatroom as "alpha" (channel_id: general)',
+          text: 'Connected to project "project-1" as "alpha" (channel_id: project-1)',
         },
       ],
     })
+    expect(connect).toHaveBeenCalledWith(
+      'alpha',
+      'frontend agent',
+      'project-1',
+      undefined,
+      CLAUDE_RUNTIME,
+    )
+  })
+
+  it('connects with run_id when provided', async () => {
+    const connect = vi.fn().mockResolvedValue({
+      project_id: 'project-1',
+      channel_id: 'run-channel-1',
+      run_id: 'run-1',
+    })
+    const handlers = createToolHandlers({
+      client: {
+        connectedName: null,
+        connect,
+        sendMessage: vi.fn(),
+        listMembers: vi.fn(),
+      } as never,
+    })
+
+    const result = await handlers.connectChat({
+      name: 'alpha',
+      description: 'frontend agent',
+      project_id: 'project-1',
+      run_id: 'run-1',
+    })
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: 'text',
+          text: 'Connected to project "project-1" as "alpha" (channel_id: run-channel-1)',
+        },
+      ],
+    })
+    expect(connect).toHaveBeenCalledWith(
+      'alpha',
+      'frontend agent',
+      'project-1',
+      'run-1',
+      CLAUDE_RUNTIME,
+    )
   })
 
   it('returns connection errors', async () => {
@@ -127,7 +189,7 @@ describe('tool handlers', () => {
               {
                 name: 'alpha',
                 description: 'frontend agent',
-                channel_id: 'general',
+                channel_id: 'project-1',
               },
             ],
           })

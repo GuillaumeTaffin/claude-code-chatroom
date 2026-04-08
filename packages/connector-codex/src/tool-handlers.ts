@@ -1,5 +1,17 @@
 import type { ChatroomClient } from '@chatroom/connector-core'
+import type { RuntimeIdentity } from '@chatroom/shared'
 import { formatWaitForEventsResult } from './event-result-format.js'
+
+const CODEX_RUNTIME: RuntimeIdentity = {
+  runtime_id: 'codex',
+  runtime_version: null,
+  capabilities: {
+    can_stream_events: false,
+    can_use_tools: true,
+    can_manage_files: true,
+    can_execute_commands: true,
+  },
+}
 
 function successContent(text: string) {
   return {
@@ -18,6 +30,8 @@ export interface ToolHandlers {
   connectChat(args: {
     name: string
     description: string
+    project_id?: string
+    run_id?: string
   }): Promise<
     ReturnType<typeof successContent> | ReturnType<typeof errorContent>
   >
@@ -63,10 +77,16 @@ export function createToolHandlers({
       }
 
       try {
-        const data = await client.connect(args.name, args.description)
+        const data = await client.connect(
+          args.name,
+          args.description,
+          args.project_id,
+          args.run_id,
+          CODEX_RUNTIME,
+        )
 
         return successContent(
-          `Connected to chatroom as "${args.name}" (channel_id: ${data.channel_id})`,
+          `Connected to project "${data.project_id}" as "${args.name}" (channel_id: ${data.channel_id})`,
         )
       } catch (error) {
         return errorContent(`Connection error: ${(error as Error).message}`)

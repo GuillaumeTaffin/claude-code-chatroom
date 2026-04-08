@@ -1,4 +1,9 @@
-import type { ConnectResponse, MembersResponse } from '@chatroom/shared'
+import type {
+  ConnectRequest,
+  ConnectResponse,
+  MembersResponse,
+  RuntimeIdentity,
+} from '@chatroom/shared'
 
 export interface ChatroomMember {
   name: string
@@ -7,8 +12,14 @@ export interface ChatroomMember {
 }
 
 export interface ChatroomApi {
-  connect(name: string, description: string): Promise<ConnectResponse>
-  listMembers(): Promise<MembersResponse>
+  connect(
+    name: string,
+    description: string,
+    projectId: string,
+    runId?: string,
+    runtime?: RuntimeIdentity,
+  ): Promise<ConnectResponse>
+  listMembers(projectId: string): Promise<MembersResponse>
 }
 
 export interface CreateChatroomApiOptions {
@@ -21,11 +32,25 @@ export function createChatroomApi({
   serverUrl,
 }: CreateChatroomApiOptions): ChatroomApi {
   return {
-    async connect(name: string, description: string) {
+    async connect(
+      name: string,
+      description: string,
+      projectId: string,
+      runId?: string,
+      runtime?: RuntimeIdentity,
+    ) {
+      const request: ConnectRequest = {
+        name,
+        description,
+        project_id: projectId,
+        ...(runId && { run_id: runId }),
+        ...(runtime && { runtime }),
+      }
+
       const response = await fetchImpl(`${serverUrl}/connect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description }),
+        body: JSON.stringify(request),
       })
 
       if (!response.ok) {
@@ -36,8 +61,10 @@ export function createChatroomApi({
       return (await response.json()) as ConnectResponse
     },
 
-    async listMembers() {
-      const response = await fetchImpl(`${serverUrl}/members`)
+    async listMembers(projectId: string) {
+      const response = await fetchImpl(
+        `${serverUrl}/members?project_id=${encodeURIComponent(projectId)}`,
+      )
       if (!response.ok) {
         throw new Error(response.statusText)
       }

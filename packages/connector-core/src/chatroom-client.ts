@@ -1,6 +1,6 @@
-import { makeRequest } from '@chatroom/shared'
+import { makeRequest, type RuntimeIdentity } from '@chatroom/shared'
 import { createChatroomApi, type ChatroomApi } from './chatroom-api.js'
-import { getServerUrl, getWsUrl } from './config.js'
+import { getProjectId, getRunId, getServerUrl, getWsUrl } from './config.js'
 import {
   createChatEventBuffer,
   type ChatEventBuffer,
@@ -19,9 +19,17 @@ import {
 
 export interface ChatroomClient {
   readonly connectedName: string | null
+  readonly projectId: string | null
   readonly channelId: string | null
+  readonly runId: string | null
   readonly isConnected: boolean
-  connect(name: string, description: string): Promise<{ channel_id: string }>
+  connect(
+    name: string,
+    description: string,
+    projectId?: string,
+    runId?: string,
+    runtime?: RuntimeIdentity,
+  ): Promise<{ project_id: string; channel_id: string; run_id?: string }>
   sendMessage(args: {
     channel_id: string
     text: string
@@ -68,6 +76,8 @@ export function createChatroomClient({
 }: CreateChatroomClientOptions): ChatroomClient {
   const serverUrl = providedServerUrl ?? getServerUrl(env)
   const wsUrl = providedWsUrl ?? getWsUrl(serverUrl)
+  const configuredProjectId = getProjectId(env)
+  const configuredRunId = getRunId(env)
 
   const api =
     providedApi ??
@@ -97,23 +107,57 @@ export function createChatroomClient({
       return state.connectedName
     },
 
+    get projectId() {
+      return state.projectId
+    },
+
     get channelId() {
       return state.channelId
+    },
+
+    get runId() {
+      return state.runId
     },
 
     get isConnected() {
       return state.wsConnection !== null
     },
 
-    async connect(name: string, description: string) {
+    async connect(
+      name: string,
+      description: string,
+      projectId?: string,
+      runId?: string,
+      runtime?: RuntimeIdentity,
+    ) {
       if (state.connectedName) {
         throw new Error(`Already connected as "${state.connectedName}"`)
       }
 
+      const selectedProjectId = projectId?.trim() || configuredProjectId
+      if (!selectedProjectId) {
+        throw new Error(
+          'Project ID is required. Pass project_id to connect_chat or set CHATROOM_PROJECT_ID.',
+        )
+      }
+
+      const selectedRunId = runId?.trim() || configuredRunId || undefined
+
       try {
-        const data = await api.connect(name, description)
-        await wsClient.connect(name)
-        state.setIdentity(name, data.channel_id)
+        const data = await api.connect(
+          name,
+          description,
+          selectedProjectId,
+          selectedRunId,
+          runtime,
+        )
+        await wsClient.connect(name, data.project_id)
+        state.setIdentity(
+          name,
+          data.project_id,
+          data.channel_id,
+          data.run_id ?? null,
+        )
         eventBuffer.clear()
         return data
       } catch (error) {
@@ -149,7 +193,13 @@ export function createChatroomClient({
     },
 
     listMembers() {
-      return api.listMembers()
+      if (!state.projectId) {
+        return Promise.reject(
+          new Error('Not connected. Call connect_chat first.'),
+        )
+      }
+
+      return api.listMembers(state.projectId)
     },
 
     waitForEvents(options = {}) {

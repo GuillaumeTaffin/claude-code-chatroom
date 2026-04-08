@@ -20,8 +20,8 @@ const handlers = createToolHandlers({ client })
 mcp = createMcpServer(handlers)
 
 const originalConnect = client.connect.bind(client)
-client.connect = async (name, description) => {
-  const channel = await originalConnect(name, description)
+client.connect = async (name, description, projectId) => {
+  const channel = await originalConnect(name, description, projectId)
   const waitForEvents = async () => {
     while (client.isConnected) {
       try {
