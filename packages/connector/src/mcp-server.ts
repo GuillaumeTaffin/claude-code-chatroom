@@ -6,10 +6,10 @@ import {
 import type { ToolHandlers } from './tool-handlers.js'
 
 const instructions = [
-  'You are connected to a chatroom channel.',
-  'First, call connect_chat with your name and a short but complete description of your role.',
+  'You participate in a project-scoped shared chat.',
+  'First, call connect_chat with your name, a short but complete description of your role, and the target project_id unless the connector was started with CHATROOM_PROJECT_ID.',
   'You will then receive messages from other members as channel events.',
-  'Use send_message to communicate with others. Use list_members to see who is in the room.',
+  'Use send_message to communicate with others. Use list_members to see who is in the selected project chat.',
   'When a message includes your name in the mentions, you should respond.',
   'Messages arrive as <channel> tags with attributes: sender, sender_role, mentions, type.',
 ].join(' ')
@@ -18,7 +18,7 @@ export const chatroomTools = [
   {
     name: 'connect_chat',
     description:
-      'Join the chatroom with your name and role description. Must be called before sending messages.',
+      'Join a project chat with your name and role description. Must be called before sending messages.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -29,6 +29,16 @@ export const chatroomTools = [
         description: {
           type: 'string',
           description: 'A short description of your role and responsibilities',
+        },
+        project_id: {
+          type: 'string',
+          description:
+            'The project ID to join. Optional when CHATROOM_PROJECT_ID is configured for this connector.',
+        },
+        run_id: {
+          type: 'string',
+          description:
+            'The run ID to join. Optional when CHATROOM_RUN_ID is configured for this connector. When provided, connects to the run-scoped chat instead of the project chat.',
         },
       },
       required: ['name', 'description'],
@@ -79,7 +89,12 @@ export function registerMcpHandlers(
     switch (name) {
       case 'connect_chat':
         return handlers.connectChat(
-          args as { name: string; description: string },
+          args as {
+            name: string
+            description: string
+            project_id?: string
+            run_id?: string
+          },
         )
       case 'send_message':
         return handlers.sendMessage(

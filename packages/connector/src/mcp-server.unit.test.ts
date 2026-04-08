@@ -43,13 +43,49 @@ describe('mcp server wiring', () => {
       callHandler?.({
         params: {
           name: 'connect_chat',
-          arguments: { name: 'alpha', description: 'frontend agent' },
+          arguments: {
+            name: 'alpha',
+            description: 'frontend agent',
+            project_id: 'project-1',
+          },
         },
       }),
     ).resolves.toEqual({ ok: true })
     expect(handlers.connectChat).toHaveBeenCalledWith({
       name: 'alpha',
       description: 'frontend agent',
+      project_id: 'project-1',
+    })
+  })
+
+  it('passes run_id to connect_chat when provided', async () => {
+    const server = new FakeServer()
+    const handlers = {
+      connectChat: vi.fn().mockResolvedValue({ ok: true }),
+      sendMessage: vi.fn(),
+      listMembers: vi.fn(),
+    }
+
+    registerMcpHandlers(server as never, handlers)
+
+    const callHandler = server.handlers.get(CallToolRequestSchema)
+
+    await callHandler?.({
+      params: {
+        name: 'connect_chat',
+        arguments: {
+          name: 'alpha',
+          description: 'frontend agent',
+          project_id: 'project-1',
+          run_id: 'run-1',
+        },
+      },
+    })
+    expect(handlers.connectChat).toHaveBeenCalledWith({
+      name: 'alpha',
+      description: 'frontend agent',
+      project_id: 'project-1',
+      run_id: 'run-1',
     })
   })
 

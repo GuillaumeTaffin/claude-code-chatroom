@@ -1,4 +1,16 @@
 import type { ChatroomClient } from '@chatroom/connector-core'
+import type { RuntimeIdentity } from '@chatroom/shared'
+
+const CLAUDE_RUNTIME: RuntimeIdentity = {
+  runtime_id: 'claude',
+  runtime_version: null,
+  capabilities: {
+    can_stream_events: true,
+    can_use_tools: true,
+    can_manage_files: true,
+    can_execute_commands: true,
+  },
+}
 
 function successContent(text: string) {
   return {
@@ -17,6 +29,8 @@ export interface ToolHandlers {
   connectChat(args: {
     name: string
     description: string
+    project_id?: string
+    run_id?: string
   }): Promise<
     ReturnType<typeof successContent> | ReturnType<typeof errorContent>
   >
@@ -48,16 +62,27 @@ export function createToolHandlers({
   client,
 }: CreateToolHandlersOptions): ToolHandlers {
   return {
-    async connectChat(args: { name: string; description: string }) {
+    async connectChat(args: {
+      name: string
+      description: string
+      project_id?: string
+      run_id?: string
+    }) {
       if (client.connectedName) {
         return successContent(`Already connected as "${client.connectedName}"`)
       }
 
       try {
-        const data = await client.connect(args.name, args.description)
+        const data = await client.connect(
+          args.name,
+          args.description,
+          args.project_id,
+          args.run_id,
+          CLAUDE_RUNTIME,
+        )
 
         return successContent(
-          `Connected to chatroom as "${args.name}" (channel_id: ${data.channel_id})`,
+          `Connected to project "${data.project_id}" as "${args.name}" (channel_id: ${data.channel_id})`,
         )
       } catch (error) {
         return errorContent(`Connection error: ${(error as Error).message}`)

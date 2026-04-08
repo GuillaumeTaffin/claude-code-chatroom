@@ -1,19 +1,35 @@
+import type { RuntimeIdentity } from '@chatroom/shared'
 import { describe, expect, it, vi } from 'vitest'
 import { createToolHandlers } from './tool-handlers.js'
 
+const CODEX_RUNTIME: RuntimeIdentity = {
+  runtime_id: 'codex',
+  runtime_version: null,
+  capabilities: {
+    can_stream_events: false,
+    can_use_tools: true,
+    can_manage_files: true,
+    can_execute_commands: true,
+  },
+}
+
 describe('codex tool handlers', () => {
   it('connects, sends messages, and lists members', async () => {
+    const connect = vi
+      .fn()
+      .mockResolvedValue({ project_id: 'project-1', channel_id: 'project-1' })
     const handlers = createToolHandlers({
       client: {
         connectedName: null,
-        connect: vi.fn().mockResolvedValue({ channel_id: 'general' }),
+        connect,
         sendMessage: vi.fn().mockResolvedValue({ ok: true }),
         listMembers: vi.fn().mockResolvedValue({
+          project_id: 'project-1',
           members: [
             {
               name: 'alpha',
               description: 'frontend agent',
-              channel_id: 'general',
+              channel_id: 'project-1',
             },
           ],
         }),
@@ -22,15 +38,26 @@ describe('codex tool handlers', () => {
     })
 
     await expect(
-      handlers.connectChat({ name: 'alpha', description: 'frontend agent' }),
+      handlers.connectChat({
+        name: 'alpha',
+        description: 'frontend agent',
+        project_id: 'project-1',
+      }),
     ).resolves.toEqual({
       content: [
         {
           type: 'text',
-          text: 'Connected to chatroom as "alpha" (channel_id: general)',
+          text: 'Connected to project "project-1" as "alpha" (channel_id: project-1)',
         },
       ],
     })
+    expect(connect).toHaveBeenCalledWith(
+      'alpha',
+      'frontend agent',
+      'project-1',
+      undefined,
+      CODEX_RUNTIME,
+    )
 
     await expect(
       handlers.sendMessage({ channel_id: 'general', text: 'hello' }),
@@ -46,6 +73,46 @@ describe('codex tool handlers', () => {
         },
       ],
     })
+  })
+
+  it('connects with run_id when provided', async () => {
+    const connect = vi.fn().mockResolvedValue({
+      project_id: 'project-1',
+      channel_id: 'run-channel-1',
+      run_id: 'run-1',
+    })
+    const handlers = createToolHandlers({
+      client: {
+        connectedName: null,
+        connect,
+        sendMessage: vi.fn(),
+        listMembers: vi.fn(),
+        waitForEvents: vi.fn(),
+      } as never,
+    })
+
+    const result = await handlers.connectChat({
+      name: 'alpha',
+      description: 'frontend agent',
+      project_id: 'project-1',
+      run_id: 'run-1',
+    })
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: 'text',
+          text: 'Connected to project "project-1" as "alpha" (channel_id: run-channel-1)',
+        },
+      ],
+    })
+    expect(connect).toHaveBeenCalledWith(
+      'alpha',
+      'frontend agent',
+      'project-1',
+      'run-1',
+      CODEX_RUNTIME,
+    )
   })
 
   it('returns already connected and connection errors', async () => {

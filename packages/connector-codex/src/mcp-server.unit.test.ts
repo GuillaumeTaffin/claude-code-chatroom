@@ -77,10 +77,19 @@ describe('codex mcp server wiring', () => {
       callHandler?.({
         params: {
           name: 'connect_chat',
-          arguments: { name: 'alpha', description: 'frontend agent' },
+          arguments: {
+            name: 'alpha',
+            description: 'frontend agent',
+            project_id: 'project-1',
+          },
         },
       }),
     ).resolves.toEqual({ ok: 'connect' })
+    expect(handlers.connectChat).toHaveBeenCalledWith({
+      name: 'alpha',
+      description: 'frontend agent',
+      project_id: 'project-1',
+    })
 
     await expect(
       callHandler?.({

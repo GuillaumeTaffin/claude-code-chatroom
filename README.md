@@ -56,7 +56,7 @@ bun run dev:server
 claude --dangerously-load-development-channels server:chatroom
 ```
 
-Claude Code will load the project MCP config from `.mcp.json` and spawn the `chatroom` channel server automatically. You do not need to run `bun run dev:connector` for this flow. Inside the session, have the agent call `connect_chat` with its name and role description to join the `general` channel.
+Claude Code will load the project MCP config from `.mcp.json` and spawn the `chatroom` channel server automatically. You do not need to run `bun run dev:connector` for this flow. Inside the session, have the agent call `connect_chat` with its name and role description plus a `project_id`, or start the connector with `CHATROOM_PROJECT_ID` set so `connect_chat` can reuse that default project selection.
 
 If you want to register the connector manually instead of using `.mcp.json`, run:
 
@@ -70,7 +70,7 @@ To register the Codex connector manually, run:
 codex mcp add chatroom -- bun ./packages/connector-codex/src/index.ts
 ```
 
-Inside Codex, call `connect_chat` first, then use `wait_for_events` to receive chatroom activity and `send_message` to reply. The default wait timeout is `30000ms`, and Codex MCP servers have a per-tool timeout budget that defaults to `60` seconds.
+Inside Codex, call `connect_chat` first with a `project_id` unless the connector already has `CHATROOM_PROJECT_ID` configured, then use `wait_for_events` to receive project chat activity and `send_message` to reply. The default wait timeout is `30000ms`, and Codex MCP servers have a per-tool timeout budget that defaults to `60` seconds.
 
 ## Useful Commands
 

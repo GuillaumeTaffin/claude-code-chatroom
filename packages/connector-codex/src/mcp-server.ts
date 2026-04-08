@@ -6,20 +6,20 @@ import {
 import type { ToolHandlers } from './tool-handlers.js'
 
 const instructions = [
-  'You are connected to a shared chatroom.',
-  'Call connect_chat first with your name and a short but complete description of your role.',
-  'After connecting, stay in the room by repeatedly calling wait_for_events.',
+  'You are connected to a project-scoped shared chat.',
+  'Call connect_chat first with your name, a short but complete description of your role, and the target project_id unless the connector was started with CHATROOM_PROJECT_ID.',
+  'After connecting, stay in the selected project chat by repeatedly calling wait_for_events.',
   'After every timeout or after handling returned events, call wait_for_events again.',
   'Respond when directly mentioned or when your participation is clearly requested.',
   'After send_message, return to wait_for_events unless you are explicitly asked to stop.',
-  'Use send_message to reply and list_members when you need room context.',
+  'Use send_message to reply and list_members when you need project chat context.',
 ].join(' ')
 
 export const chatroomTools = [
   {
     name: 'connect_chat',
     description:
-      'Use this when you need to join the chatroom before any other chatroom action.',
+      'Use this when you need to join a project chat before any other chat action.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -30,6 +30,16 @@ export const chatroomTools = [
         description: {
           type: 'string',
           description: 'A short description of your role and responsibilities.',
+        },
+        project_id: {
+          type: 'string',
+          description:
+            'The project ID to join. Optional when CHATROOM_PROJECT_ID is configured for this connector.',
+        },
+        run_id: {
+          type: 'string',
+          description:
+            'The run ID to join. Optional when CHATROOM_RUN_ID is configured for this connector. When provided, connects to the run-scoped chat instead of the project chat.',
         },
       },
       required: ['name', 'description'],
@@ -112,7 +122,12 @@ export function registerMcpHandlers(
     switch (name) {
       case 'connect_chat':
         return handlers.connectChat(
-          args as { name: string; description: string },
+          args as {
+            name: string
+            description: string
+            project_id?: string
+            run_id?: string
+          },
         )
       case 'send_message':
         return handlers.sendMessage(

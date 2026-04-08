@@ -11,7 +11,12 @@ import {
   INVALID_CHANNEL,
   INVALID_PARAMS,
 } from '@chatroom/shared'
-import { getOrCreateRoom, DEFAULT_CHANNEL_ID } from './state.js'
+import {
+  defaultProjectChatDependencies,
+  findRoomByWebSocket,
+  getProjectRoom,
+  type ProjectChatDependencies,
+} from './state.js'
 
 interface ChannelSocket {
   raw: {
@@ -22,13 +27,40 @@ interface ChannelSocket {
   data: {
     query: {
       name: string
+      project_id: string
     }
   }
 }
 
 export function handleOpen(ws: ChannelSocket) {
+  handleOpenWithDependencies(ws, defaultProjectChatDependencies)
+}
+
+export function handleOpenWithDependencies(
+  ws: ChannelSocket,
+  dependencies: ProjectChatDependencies,
+) {
   const name = ws.data.query.name
-  const room = getOrCreateRoom(DEFAULT_CHANNEL_ID)
+  const projectId = ws.data.query.project_id
+
+  if (!projectId) {
+    ws.send(makeErrorResponse(0, INVALID_PARAMS, 'project_id is required'))
+    ws.close()
+    return
+  }
+
+  const room = getProjectRoom(projectId, dependencies)
+  if (!room) {
+    ws.send(
+      makeErrorResponse(
+        0,
+        INVALID_CHANNEL,
+        `Invalid project_id "${projectId}"`,
+      ),
+    )
+    ws.close()
+    return
+  }
 
   // Validate the member has registered via POST /connect
   if (!room.isRegistered(name)) {
@@ -72,8 +104,17 @@ export function handleOpen(ws: ChannelSocket) {
 }
 
 export function handleMessage(ws: ChannelSocket, rawMessage: unknown) {
+  handleMessageWithDependencies(ws, rawMessage, defaultProjectChatDependencies)
+}
+
+export function handleMessageWithDependencies(
+  ws: ChannelSocket,
+  rawMessage: unknown,
+  dependencies: ProjectChatDependencies,
+) {
   const name = ws.data.query.name
-  const room = getOrCreateRoom(DEFAULT_CHANNEL_ID)
+  const projectId = ws.data.query.project_id
+  const room = getProjectRoom(projectId, dependencies)
 
   let msg: JsonRpcMessage
   try {
@@ -88,6 +129,17 @@ export function handleMessage(ws: ChannelSocket, rawMessage: unknown) {
 
   if (!isRequest(msg)) {
     ws.send(makeErrorResponse(0, -32600, 'Expected a JSON-RPC request'))
+    return
+  }
+
+  if (!room) {
+    ws.send(
+      makeErrorResponse(
+        msg.id,
+        INVALID_CHANNEL,
+        `Invalid project_id "${projectId}"`,
+      ),
+    )
     return
   }
 
@@ -154,38 +206,59 @@ export function handleMessage(ws: ChannelSocket, rawMessage: unknown) {
 }
 
 export function handleClose(ws: Pick<ChannelSocket, 'raw'>) {
-  const room = getOrCreateRoom(DEFAULT_CHANNEL_ID)
+  handleCloseWithDependencies(ws, defaultProjectChatDependencies)
+}
 
-  const removedName = room.unregisterWebSocket(ws.raw)
-  if (removedName) {
-    // Broadcast member_left to remaining members
-    const timestamp = new Date().toISOString()
-    const leaveNotification = JSON.stringify(
-      makeNotification('member_left', { name: removedName, timestamp }),
-    )
-    room.broadcastAll(leaveNotification)
+export function handleCloseWithDependencies(
+  ws: Pick<ChannelSocket, 'raw'>,
+  dependencies: ProjectChatDependencies,
+) {
+  const room = findRoomByWebSocket(ws.raw, dependencies)
+  if (!room) return
 
-    console.log(`[ws] ${removedName} disconnected`)
+  const removedName = room.unregisterWebSocket(ws.raw)!
+  // Broadcast member_left to remaining members
+  const timestamp = new Date().toISOString()
+  const leaveNotification = JSON.stringify(
+    makeNotification('member_left', { name: removedName, timestamp }),
+  )
+  room.broadcastAll(leaveNotification)
+
+  console.log(`[ws] ${removedName} disconnected`)
+}
+
+export function createWsHandlers(
+  dependencies: ProjectChatDependencies = defaultProjectChatDependencies,
+) {
+  return {
+    open(ws: ChannelSocket) {
+      handleOpenWithDependencies(ws, dependencies)
+    },
+    message(ws: ChannelSocket, rawMessage: unknown) {
+      handleMessageWithDependencies(ws, rawMessage, dependencies)
+    },
+    close(ws: Pick<ChannelSocket, 'raw'>) {
+      handleCloseWithDependencies(ws, dependencies)
+    },
   }
 }
 
-export const wsHandlers = {
-  open(ws: ChannelSocket) {
-    handleOpen(ws)
-  },
-  message(ws: ChannelSocket, rawMessage: unknown) {
-    handleMessage(ws, rawMessage)
-  },
-  close(ws: Pick<ChannelSocket, 'raw'>) {
-    handleClose(ws)
-  },
+export const wsHandlers = createWsHandlers()
+
+export function createWs(
+  dependencies: ProjectChatDependencies = defaultProjectChatDependencies,
+) {
+  const handlers = createWsHandlers(dependencies)
+
+  return new Elysia().ws('/ws', {
+    query: t.Object({
+      name: t.String(),
+      project_id: t.String(),
+    }),
+    open: handlers.open,
+    message: handlers.message,
+    close: handlers.close,
+  })
 }
 
-export const ws = new Elysia().ws('/ws', {
-  query: t.Object({
-    name: t.String(),
-  }),
-  open: wsHandlers.open,
-  message: wsHandlers.message,
-  close: wsHandlers.close,
-})
+export const ws = createWs()

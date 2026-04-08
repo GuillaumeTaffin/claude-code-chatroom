@@ -11,10 +11,17 @@ export interface PendingRequest {
 
 export interface ConnectorSessionState {
   readonly connectedName: string | null
+  readonly projectId: string | null
   readonly channelId: string | null
+  readonly runId: string | null
   readonly wsConnection: ConnectorWebSocket | null
   readonly pendingRequests: Map<string | number, PendingRequest>
-  setIdentity(name: string, channelId: string): void
+  setIdentity(
+    name: string,
+    projectId: string,
+    channelId: string,
+    runId?: string | null,
+  ): void
   clearIdentity(): void
   setWsConnection(connection: ConnectorWebSocket): void
   clearWsConnection(): void
@@ -23,7 +30,9 @@ export interface ConnectorSessionState {
 
 export function createConnectorSessionState(): ConnectorSessionState {
   let connectedName: string | null = null
+  let projectId: string | null = null
   let channelId: string | null = null
+  let runId: string | null = null
   let wsConnection: ConnectorWebSocket | null = null
   let rpcIdCounter = 0
   const pendingRequests = new Map<string | number, PendingRequest>()
@@ -32,8 +41,14 @@ export function createConnectorSessionState(): ConnectorSessionState {
     get connectedName() {
       return connectedName
     },
+    get projectId() {
+      return projectId
+    },
     get channelId() {
       return channelId
+    },
+    get runId() {
+      return runId
     },
     get wsConnection() {
       return wsConnection
@@ -41,13 +56,22 @@ export function createConnectorSessionState(): ConnectorSessionState {
     get pendingRequests() {
       return pendingRequests
     },
-    setIdentity(name: string, nextChannelId: string) {
+    setIdentity(
+      name: string,
+      nextProjectId: string,
+      nextChannelId: string,
+      nextRunId?: string | null,
+    ) {
       connectedName = name
+      projectId = nextProjectId
       channelId = nextChannelId
+      runId = nextRunId ?? null
     },
     clearIdentity() {
       connectedName = null
+      projectId = null
       channelId = null
+      runId = null
     },
     setWsConnection(connection: ConnectorWebSocket) {
       wsConnection = connection

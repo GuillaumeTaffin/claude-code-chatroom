@@ -38,7 +38,7 @@ export interface CreateChatroomWebSocketClientOptions {
 }
 
 export interface ChatroomWebSocketClient {
-  connect(name: string): Promise<void>
+  connect(name: string, projectId: string): Promise<void>
   sendRpcRequest(id: number, request: unknown): Promise<unknown>
   close(): void
 }
@@ -98,10 +98,10 @@ export function createChatroomWebSocketClient({
   onClose,
 }: CreateChatroomWebSocketClientOptions): ChatroomWebSocketClient {
   return {
-    connect(name: string): Promise<void> {
+    connect(name: string, projectId: string): Promise<void> {
       return new Promise((resolve, reject) => {
         const socket = new WebSocketImpl(
-          `${wsUrl}/ws?name=${encodeURIComponent(name)}`,
+          `${wsUrl}/ws?name=${encodeURIComponent(name)}&project_id=${encodeURIComponent(projectId)}`,
         )
 
         socket.onopen = () => {

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@chatroom/connector-core": "workspace:*",
+    "@chatroom/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.0"
   },
   "devDependencies": {
