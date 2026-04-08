@@ -44,6 +44,18 @@
         "bun-types": "latest",
       },
     },
+    "packages/connector-copilot": {
+      "name": "@chatroom/connector-copilot",
+      "version": "0.0.1",
+      "dependencies": {
+        "@chatroom/connector-core": "workspace:*",
+        "@chatroom/shared": "workspace:*",
+        "@modelcontextprotocol/sdk": "^1.12.0",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+      },
+    },
     "packages/connector-core": {
       "name": "@chatroom/connector-core",
       "version": "0.0.1",
@@ -122,6 +134,8 @@
     "@chatroom/connector": ["@chatroom/connector@workspace:packages/connector"],
 
     "@chatroom/connector-codex": ["@chatroom/connector-codex@workspace:packages/connector-codex"],
+
+    "@chatroom/connector-copilot": ["@chatroom/connector-copilot@workspace:packages/connector-copilot"],
 
     "@chatroom/connector-core": ["@chatroom/connector-core@workspace:packages/connector-core"],
 
