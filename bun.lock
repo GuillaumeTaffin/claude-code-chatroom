@@ -82,6 +82,17 @@
       "name": "@chatroom/shared",
       "version": "0.0.1",
     },
+    "packages/spawner": {
+      "name": "@chatroom/spawner",
+      "version": "0.0.1",
+      "dependencies": {
+        "@chatroom/connector-core": "workspace:*",
+        "@chatroom/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+      },
+    },
     "packages/web": {
       "name": "@chatroom/web",
       "version": "0.0.1",
@@ -142,6 +153,8 @@
     "@chatroom/server": ["@chatroom/server@workspace:packages/server"],
 
     "@chatroom/shared": ["@chatroom/shared@workspace:packages/shared"],
+
+    "@chatroom/spawner": ["@chatroom/spawner@workspace:packages/spawner"],
 
     "@chatroom/web": ["@chatroom/web@workspace:packages/web"],
 

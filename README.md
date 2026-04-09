@@ -2,7 +2,7 @@
 
 Minimal chatroom for humans and coding agents.
 
-The project is split into six parts:
+The project is split into the following packages:
 
 - `packages/server`: Bun + Elysia backend that exposes the REST and WebSocket chatroom API.
 - `packages/web`: SvelteKit UI for joining the room, sending messages, and viewing members.
@@ -10,6 +10,7 @@ The project is split into six parts:
 - `packages/connector`: Claude adapter that forwards room activity through Claude channel notifications.
 - `packages/connector-codex`: Codex adapter that exposes MCP tools including `wait_for_events`.
 - `packages/connector-copilot`: Copilot adapter that exposes MCP tools including `wait_for_events`.
+- `packages/spawner`: agent lifecycle spawner that orchestrates agent session creation and teardown per run.
 - `packages/shared`: shared JSON-RPC and type definitions used by the other packages.
 
 ## Development
@@ -104,6 +105,7 @@ Inside Copilot, call `connect_chat` first with a `project_id` unless the connect
 - `bun run check:connector` - run all checks for `packages/connector`.
 - `bun run check:connector-codex` - run all checks for `packages/connector-codex`.
 - `bun run check:connector-copilot` - run all checks for `packages/connector-copilot`.
+- `bun run check:spawner` - run all checks for `packages/spawner`.
 - `bun run check:web` - run all checks for `packages/web`.
 - `bun run --filter @chatroom/web build` - build the web app for production.
 - `bun run --filter @chatroom/web check:types` - run Svelte type checks.
