@@ -12,3 +12,9 @@ export type {
   SpawnedAgentInfo,
   RunSpawnStatus,
 } from './types.js'
+export {
+  createClaudeSession,
+  createClaudeSessionFactory,
+  buildPrompt,
+} from './claude-adapter.js'
+export type { ClaudeAgentDependencies } from './claude-adapter.js'
