@@ -106,15 +106,19 @@ function makeTools() {
 }
 
 describe('buildPrompt', () => {
-  it('includes agent name, role description, server URL, project and run IDs', () => {
+  it('includes agent name and role description', () => {
     const config = makeConfig()
     const prompt = buildPrompt(config)
 
     expect(prompt).toContain('"test-agent"')
     expect(prompt).toContain('A helpful test agent')
-    expect(prompt).toContain('http://localhost:3000')
-    expect(prompt).toContain('"project-1"')
-    expect(prompt).toContain('"run-1"')
+  })
+
+  it('explains the agent is already connected and should not write scripts', () => {
+    const prompt = buildPrompt(makeConfig())
+
+    expect(prompt).toContain('ALREADY CONNECTED')
+    expect(prompt).toContain('do not write scripts')
   })
 
   it('includes custom system prompt when provided', () => {
@@ -124,11 +128,11 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('Be extra careful')
   })
 
-  it('omits system prompt line when not provided', () => {
+  it('omits custom system prompt section when not provided', () => {
     const config = makeConfig()
-    const lines = buildPrompt(config).split('\n')
+    const prompt = buildPrompt(config)
 
-    expect(lines).toHaveLength(4)
+    expect(prompt).not.toContain('undefined')
   })
 })
 
@@ -305,19 +309,20 @@ describe('createClaudeSession', () => {
     await session.start()
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(queryFn).toHaveBeenCalledWith({
-      prompt: expect.stringContaining('"test-agent"'),
-      options: {
-        systemPrompt: 'Custom prompt',
-        model: 'claude-4',
-        maxTurns: 5,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
-      },
-    })
+    const callArgs = (queryFn.mock.calls as unknown as unknown[][])[0][0] as {
+      prompt: unknown
+      options: Record<string, unknown>
+    }
+    expect(callArgs.prompt).toBeDefined()
+    expect(callArgs.options.model).toBe('claude-4')
+    expect(callArgs.options.maxTurns).toBe(5)
+    expect(callArgs.options.permissionMode).toBe('bypassPermissions')
+    expect(callArgs.options.allowDangerouslySkipPermissions).toBe(true)
+    expect(callArgs.options.systemPrompt).toContain('Custom prompt')
+    expect(callArgs.options.systemPrompt).toContain('"test-agent"')
   })
 
-  it('uses roleDescription as systemPrompt fallback when no systemPrompt provided', async () => {
+  it('uses buildPrompt as systemPrompt with role description', async () => {
     const queryFn = vi.fn(() => {
       const ctrl = createControllableQueryHandle()
       setTimeout(() => ctrl.complete(), 0)
@@ -329,12 +334,10 @@ describe('createClaudeSession', () => {
     await session.start()
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(queryFn).toHaveBeenCalledWith({
-      prompt: expect.any(String),
-      options: expect.objectContaining({
-        systemPrompt: 'A helpful test agent',
-      }),
-    })
+    const callArgs = (queryFn.mock.calls as unknown as unknown[][])[0][0] as {
+      options: Record<string, unknown>
+    }
+    expect(callArgs.options.systemPrompt).toContain('A helpful test agent')
   })
 
   it('passes undefined model and maxTurns when not in config', async () => {
@@ -349,13 +352,11 @@ describe('createClaudeSession', () => {
     await session.start()
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(queryFn).toHaveBeenCalledWith({
-      prompt: expect.any(String),
-      options: expect.objectContaining({
-        model: undefined,
-        maxTurns: undefined,
-      }),
-    })
+    const callArgs = (queryFn.mock.calls as unknown as unknown[][])[0][0] as {
+      options: Record<string, unknown>
+    }
+    expect(callArgs.options.model).toBeUndefined()
+    expect(callArgs.options.maxTurns).toBeUndefined()
   })
 
   it('registers onMessage callback on chatroom tools', async () => {
@@ -371,12 +372,13 @@ describe('createClaudeSession', () => {
     expect(tools.onMessage).toHaveBeenCalledWith(expect.any(Function))
   })
 
-  it('feeds incoming chatroom messages to query via streamInput', async () => {
-    const ctrl = createControllableQueryHandle()
-    const deps: ClaudeAgentDependencies = {
-      query: vi.fn().mockReturnValue(ctrl.queryHandle),
-    }
-    const session = createClaudeSession(makeConfig(), deps)
+  it('feeds incoming chatroom messages to the query prompt stream', async () => {
+    const queryFn = vi.fn(() => {
+      const ctrl = createControllableQueryHandle()
+      setTimeout(() => ctrl.complete(), 0)
+      return ctrl.queryHandle
+    })
+    const session = createClaudeSession(makeConfig(), { query: queryFn })
 
     await session.start()
 
@@ -388,42 +390,41 @@ describe('createClaudeSession', () => {
       mentions: string[]
     }) => void
 
+    // Capture the prompt async iterable passed to query()
+    const callArgs = (queryFn.mock.calls as unknown as unknown[][])[0][0] as {
+      prompt: AsyncIterable<unknown>
+    }
+    const promptStream = callArgs.prompt
+
     // Simulate receiving a chatroom message
-    await onMessageCallback({
+    onMessageCallback({
       sender: 'alice',
       text: 'hello agent',
       mentions: ['test-agent'],
     })
 
-    expect(ctrl.queryHandle.streamInput).toHaveBeenCalledTimes(1)
+    // Consume the next item from the prompt stream
+    const iterator = promptStream[Symbol.asyncIterator]()
+    const result = await iterator.next()
 
-    // Extract the async iterable passed to streamInput and consume it
-    const streamInputCall = (
-      ctrl.queryHandle.streamInput as ReturnType<typeof vi.fn>
-    ).mock.calls[0][0] as AsyncIterable<unknown>
-    const items: unknown[] = []
-    for await (const item of streamInputCall) {
-      items.push(item)
-    }
-
-    expect(items).toHaveLength(1)
-    expect(items[0]).toEqual({
+    expect(result.done).toBe(false)
+    expect(result.value).toEqual({
       type: 'user',
       message: { role: 'user', content: '[alice]: hello agent' },
       parent_tool_use_id: null,
     })
+
+    // Stop the session to unblock the stream
+    await session.stop()
   })
 
-  it('streamInput errors are silently caught', async () => {
-    const ctrl = createControllableQueryHandle()
-    ;(
-      ctrl.queryHandle.streamInput as ReturnType<typeof vi.fn>
-    ).mockRejectedValue(new Error('session ended'))
-
-    const deps: ClaudeAgentDependencies = {
-      query: vi.fn().mockReturnValue(ctrl.queryHandle),
-    }
-    const session = createClaudeSession(makeConfig(), deps)
+  it('wakes up the prompt stream when a message arrives mid-block', async () => {
+    const queryFn = vi.fn(() => {
+      const ctrl = createControllableQueryHandle()
+      setTimeout(() => ctrl.complete(), 0)
+      return ctrl.queryHandle
+    })
+    const session = createClaudeSession(makeConfig(), { query: queryFn })
 
     await session.start()
 
@@ -435,12 +436,55 @@ describe('createClaudeSession', () => {
       mentions: string[]
     }) => void
 
-    // Should not throw
-    await onMessageCallback({
-      sender: 'alice',
-      text: 'hello',
+    const callArgs = (queryFn.mock.calls as unknown as unknown[][])[0][0] as {
+      prompt: AsyncIterable<unknown>
+    }
+    const iterator = callArgs.prompt[Symbol.asyncIterator]()
+
+    // Start consuming the stream - this will block waiting for a message
+    const nextPromise = iterator.next()
+
+    // Push a message while the stream is blocked
+    onMessageCallback({
+      sender: 'bob',
+      text: 'wake up',
       mentions: [],
     })
+
+    const result = await nextPromise
+    expect(result.done).toBe(false)
+    expect(result.value).toEqual({
+      type: 'user',
+      message: { role: 'user', content: '[bob]: wake up' },
+      parent_tool_use_id: null,
+    })
+
+    await session.stop()
+  })
+
+  it('prompt stream exits cleanly on stop', async () => {
+    const queryFn = vi.fn(() => {
+      const ctrl = createControllableQueryHandle()
+      setTimeout(() => ctrl.complete(), 0)
+      return ctrl.queryHandle
+    })
+    const session = createClaudeSession(makeConfig(), { query: queryFn })
+
+    await session.start()
+
+    const callArgs = (queryFn.mock.calls as unknown as unknown[][])[0][0] as {
+      prompt: AsyncIterable<unknown>
+    }
+    const iterator = callArgs.prompt[Symbol.asyncIterator]()
+
+    // Start consuming (will block on the empty queue)
+    const nextPromise = iterator.next()
+
+    // Stop the session - should wake up the stream
+    await session.stop()
+
+    const result = await nextPromise
+    expect(result.done).toBe(true)
   })
 
   it('posts assistant text messages to chatroom via sendMessage', async () => {

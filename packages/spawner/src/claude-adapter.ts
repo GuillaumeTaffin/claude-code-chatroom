@@ -27,12 +27,17 @@ export interface ClaudeAgentDependencies {
 export function buildPrompt(config: AgentSessionConfig): string {
   const parts = [
     `You are "${config.agentName}", ${config.roleDescription}.`,
-    `You are participating in a project chatroom.`,
-    `The chatroom server is at ${config.serverUrl}.`,
-    `Your project ID is "${config.projectId}" and run ID is "${config.runId}".`,
+    ``,
+    `You are participating in a live group chatroom with humans and other agents.`,
+    `You are ALREADY CONNECTED to the chatroom — you do not need to write any code, run any scripts, or make any HTTP/WebSocket calls to connect.`,
+    `Messages from other participants will be delivered to you automatically as new user turns, formatted as "[sender]: text".`,
+    `Whatever plain-text response you produce will be automatically posted to the chatroom as a message from you.`,
+    `Just talk naturally — reply in plain text. Do not narrate your actions, do not write scripts, do not call tools to send messages.`,
+    `Wait until you are addressed (by name or by context) before responding. If a message is not for you, stay quiet.`,
+    `Keep replies concise and conversational unless asked for detail.`,
   ]
   if (config.systemPrompt) {
-    parts.push(config.systemPrompt)
+    parts.push('', config.systemPrompt)
   }
   return parts.join('\n')
 }
@@ -71,6 +76,7 @@ export function createClaudeSession(
   const listeners: Array<(s: SpawnedAgentStatus) => void> = []
   let tools: ChatroomTools | null = null
   const abortedRef = { value: false }
+  let wakeUpStream: (() => void) | null = null
 
   function fireStatusChange(newStatus: SpawnedAgentStatus) {
     status = newStatus
@@ -101,11 +107,33 @@ export function createClaudeSession(
       await tools.connect()
       fireStatusChange('connected')
 
-      const prompt = buildPrompt(config)
+      // Create a message queue: agent blocks until a chatroom message arrives,
+      // then yields it as a user turn. No fake initial prompt.
+      const messageQueue: Array<{
+        type: 'user'
+        message: { role: 'user'; content: string }
+        parent_tool_use_id: null
+      }> = []
+
+      async function* promptStream() {
+        while (!abortedRef.value) {
+          if (messageQueue.length === 0) {
+            await new Promise<void>((resolve) => {
+              wakeUpStream = resolve
+            })
+          }
+          if (abortedRef.value) break
+          while (messageQueue.length > 0) {
+            const next = messageQueue.shift()!
+            yield next
+          }
+        }
+      }
+
       const queryHandle = deps.query({
-        prompt,
+        prompt: promptStream(),
         options: {
-          systemPrompt: config.systemPrompt ?? config.roleDescription,
+          systemPrompt: buildPrompt(config),
           model: config.model,
           maxTurns: config.maxTurns,
           permissionMode: 'bypassPermissions',
@@ -113,22 +141,19 @@ export function createClaudeSession(
         },
       })
 
-      tools.onMessage(async (msg) => {
-        try {
-          await queryHandle.streamInput(
-            (async function* () {
-              yield {
-                type: 'user' as const,
-                message: {
-                  role: 'user' as const,
-                  content: `[${msg.sender}]: ${msg.text}`,
-                },
-                parent_tool_use_id: null,
-              }
-            })(),
-          )
-        } catch {
-          // session may have ended
+      tools.onMessage((msg) => {
+        messageQueue.push({
+          type: 'user',
+          message: {
+            role: 'user',
+            content: `[${msg.sender}]: ${msg.text}`,
+          },
+          parent_tool_use_id: null,
+        })
+        if (wakeUpStream) {
+          const fn = wakeUpStream
+          wakeUpStream = null
+          fn()
         }
       })
 
@@ -145,6 +170,11 @@ export function createClaudeSession(
 
     async stop() {
       abortedRef.value = true
+      if (wakeUpStream) {
+        const fn = wakeUpStream
+        wakeUpStream = null
+        fn()
+      }
       tools?.close()
       fireStatusChange('stopped')
     },
