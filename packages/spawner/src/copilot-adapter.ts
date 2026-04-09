@@ -21,6 +21,46 @@ export interface CopilotAgentDependencies {
   createClient(): CopilotClientHandle
 }
 
+export const CHATROOM_SEND_MESSAGE_TOOL_NAME = 'send_message'
+
+export interface CopilotSendMessageArgs {
+  text: string
+  mentions?: string[]
+}
+
+/**
+ * Builds a Copilot SDK tool definition that lets the agent post a chatroom
+ * message by calling the `send_message` tool. Exported for testing.
+ */
+export function buildSendMessageTool(tools: ChatroomTools) {
+  return {
+    name: CHATROOM_SEND_MESSAGE_TOOL_NAME,
+    description:
+      'Post a message into the chatroom you are connected to. This is the ONLY way your reply reaches other members.',
+    parameters: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: 'The message text to post in the chatroom.',
+        },
+        mentions: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Optional list of member names to @mention in the message.',
+        },
+      },
+      required: ['text'],
+    },
+    handler: async (args: CopilotSendMessageArgs) => {
+      await tools.sendMessage(args.text, args.mentions)
+      return 'Message sent.'
+    },
+    skipPermission: true,
+  }
+}
+
 export function buildCopilotPrompt(config: AgentSessionConfig): string {
   const parts = [
     `You are "${config.agentName}", ${config.roleDescription}.`,
@@ -28,9 +68,8 @@ export function buildCopilotPrompt(config: AgentSessionConfig): string {
     `You are participating in a live group chatroom with humans and other agents.`,
     `You are ALREADY CONNECTED to the chatroom — you do not need to write any code, run any scripts, or make any HTTP/WebSocket calls to connect.`,
     `Messages from other participants will be delivered to you as new prompts, formatted as "[sender]: text".`,
-    `Whatever plain-text response you produce will be automatically posted to the chatroom as a message from you.`,
-    `Just talk naturally — reply in plain text. Do not narrate your actions, do not write scripts, do not call tools to send messages.`,
-    `Wait until you are addressed (by name or by context) before responding. If a message is not for you, stay quiet by replying with the single word "skip".`,
+    `To reply in the chatroom you MUST call the \`send_message\` tool with \`{ text, mentions? }\`. Plain-text output is NOT delivered to anyone — only \`send_message\` calls reach the chat.`,
+    `Wait until you are addressed (by name or by context) before responding. If a message is not for you, do nothing — do not call \`send_message\`.`,
     `Keep replies concise and conversational unless asked for detail.`,
   ]
   if (config.systemPrompt) {
@@ -87,6 +126,10 @@ export function createCopilotSession(
           mode: 'replace',
           content: buildCopilotPrompt(config),
         },
+        // Expose `send_message` so the agent can explicitly post replies.
+        // We do NOT relay raw `assistant.message` events anymore — the agent
+        // must call this tool to reach the chatroom.
+        tools: [buildSendMessageTool(tools)],
       }
       if (config.model) {
         sessionConfig.model = config.model
@@ -99,23 +142,11 @@ export function createCopilotSession(
         if (!aborted && sessionHandle) {
           // Skip our own messages (chatroom-tools already filters but be safe)
           if (msg.sender === config.agentName) return
-          // Skip if the agent sent a "skip" reply (defensive)
           void Promise.resolve(
             sessionHandle.send({ prompt: `[${msg.sender}]: ${msg.text}` }),
           ).catch(() => {
             // session may have ended
           })
-        }
-      })
-
-      sessionHandle.on('assistant.message', (event: unknown) => {
-        if (!aborted && tools) {
-          const content = extractCopilotText(event)
-          if (content && content.trim().toLowerCase() !== 'skip') {
-            tools.sendMessage(content).catch(() => {
-              // chatroom may have disconnected
-            })
-          }
         }
       })
     },
@@ -135,21 +166,6 @@ export function createCopilotSession(
       listeners.push(cb)
     },
   }
-}
-
-export function extractCopilotText(event: unknown): string | null {
-  if (
-    event &&
-    typeof event === 'object' &&
-    'data' in event &&
-    event.data &&
-    typeof event.data === 'object' &&
-    'content' in event.data &&
-    typeof (event.data as { content: unknown }).content === 'string'
-  ) {
-    return (event.data as { content: string }).content
-  }
-  return null
 }
 
 export function createCopilotSessionFactory(

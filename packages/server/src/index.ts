@@ -1,10 +1,12 @@
-import { query } from '@anthropic-ai/claude-agent-sdk'
+import { query, createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+import { z } from 'zod'
 import { CopilotClient } from '@github/copilot-sdk'
 import {
   createSpawnManager,
   createClaudeSessionFactory,
   createCopilotSessionFactory,
   type ClaudeAgentDependencies,
+  type ChatroomMcpHandlers,
   type CopilotClientHandle,
   type AgentSession,
   type AgentSessionConfig,
@@ -14,8 +16,37 @@ import { createProjectChatDependencies } from './state.js'
 
 const PORT = Number(process.env.PORT) || 3000
 
+function createChatroomMcpServer(handlers: ChatroomMcpHandlers) {
+  return createSdkMcpServer({
+    name: 'chatroom',
+    version: '0.0.1',
+    tools: [
+      tool(
+        'send_message',
+        'Post a message into the chatroom you are connected to. This is the ONLY way your reply reaches other members.',
+        {
+          text: z
+            .string()
+            .describe('The message text to post in the chatroom.'),
+          mentions: z
+            .array(z.string())
+            .optional()
+            .describe('Optional list of member names to @mention.'),
+        },
+        async (args) => {
+          await handlers.sendMessage(args.text, args.mentions)
+          return {
+            content: [{ type: 'text', text: 'Message sent.' }],
+          }
+        },
+      ),
+    ],
+  })
+}
+
 const claudeFactory = createClaudeSessionFactory({
   query: query as unknown as ClaudeAgentDependencies['query'],
+  createChatroomMcpServer,
 })
 
 // Lazy-create one shared CopilotClient on first use; the SDK spawns the

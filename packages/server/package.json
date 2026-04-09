@@ -21,7 +21,8 @@
     "@chatroom/spawner": "workspace:*",
     "@elysiajs/cors": "^1.4.1",
     "@github/copilot-sdk": "^0.2.1",
-    "elysia": "^1.2.0"
+    "elysia": "^1.2.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "bun-types": "latest"

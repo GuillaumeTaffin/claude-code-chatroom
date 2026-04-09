@@ -22,7 +22,8 @@ import {
   createCopilotSession,
   createCopilotSessionFactory,
   buildCopilotPrompt,
-  extractCopilotText,
+  buildSendMessageTool,
+  CHATROOM_SEND_MESSAGE_TOOL_NAME,
 } from './copilot-adapter.js'
 
 const mockCreateChatroomTools = vi.mocked(createChatroomTools)
@@ -93,17 +94,18 @@ describe('buildCopilotPrompt', () => {
     expect(prompt).toContain('A helpful test agent')
   })
 
-  it('mentions that the agent is already connected and should not write scripts', () => {
+  it('mentions that the agent is already connected and instructs send_message tool', () => {
     const prompt = buildCopilotPrompt(makeConfig())
 
     expect(prompt).toContain('ALREADY CONNECTED')
-    expect(prompt).toContain('do not write scripts')
+    expect(prompt).toContain('`send_message` tool')
+    expect(prompt).toContain('Plain-text output is NOT delivered')
   })
 
-  it('instructs the agent to reply with "skip" when a message is not for it', () => {
+  it('instructs the agent to do nothing when a message is not for it', () => {
     const prompt = buildCopilotPrompt(makeConfig())
 
-    expect(prompt).toContain('skip')
+    expect(prompt).toContain('do nothing')
   })
 
   it('includes custom system prompt when provided', () => {
@@ -120,39 +122,42 @@ describe('buildCopilotPrompt', () => {
   })
 })
 
-describe('extractCopilotText', () => {
-  it('extracts string content from event.data.content', () => {
-    expect(extractCopilotText({ data: { content: 'Hello world' } })).toBe(
-      'Hello world',
-    )
+describe('buildSendMessageTool', () => {
+  it('declares name, description, JSON schema parameters and skipPermission', () => {
+    const tools = makeTools()
+    const tool = buildSendMessageTool(tools as never)
+
+    expect(tool.name).toBe(CHATROOM_SEND_MESSAGE_TOOL_NAME)
+    expect(tool.description).toMatch(/chatroom/i)
+    expect(tool.parameters).toEqual({
+      type: 'object',
+      properties: {
+        text: expect.objectContaining({ type: 'string' }),
+        mentions: expect.objectContaining({
+          type: 'array',
+          items: { type: 'string' },
+        }),
+      },
+      required: ['text'],
+    })
+    expect(tool.skipPermission).toBe(true)
   })
 
-  it('returns null when data is missing', () => {
-    expect(extractCopilotText({})).toBeNull()
+  it('handler delegates to ChatroomTools.sendMessage with text and mentions', async () => {
+    const tools = makeTools()
+    const tool = buildSendMessageTool(tools as never)
+
+    const result = await tool.handler({ text: 'hello', mentions: ['alice'] })
+    expect(tools.sendMessage).toHaveBeenCalledWith('hello', ['alice'])
+    expect(result).toBe('Message sent.')
   })
 
-  it('returns null when data.content is not a string', () => {
-    expect(extractCopilotText({ data: { content: 123 } })).toBeNull()
-  })
+  it('handler forwards undefined mentions when not provided', async () => {
+    const tools = makeTools()
+    const tool = buildSendMessageTool(tools as never)
 
-  it('returns null when data has no content property', () => {
-    expect(extractCopilotText({ data: { text: 'Hello' } })).toBeNull()
-  })
-
-  it('returns null when data is null', () => {
-    expect(extractCopilotText({ data: null })).toBeNull()
-  })
-
-  it('returns null for null event', () => {
-    expect(extractCopilotText(null)).toBeNull()
-  })
-
-  it('returns null for undefined event', () => {
-    expect(extractCopilotText(undefined)).toBeNull()
-  })
-
-  it('returns null for non-object event', () => {
-    expect(extractCopilotText('string')).toBeNull()
+    await tool.handler({ text: 'plain' })
+    expect(tools.sendMessage).toHaveBeenCalledWith('plain', undefined)
   })
 })
 
@@ -359,93 +364,59 @@ describe('createCopilotSession', () => {
     expect(session.status).toBe('running')
   })
 
-  it('posts assistant.message content to chatroom', async () => {
+  it('does not register an assistant.message listener (output goes via the tool)', async () => {
+    const deps = makeDeps()
+    const session = createCopilotSession(makeConfig(), deps)
+
+    await session.start()
+
+    expect(deps.sessionHandle._handlers.has('assistant.message')).toBe(false)
+  })
+
+  it('passes a chatroom send_message tool through to createSession', async () => {
+    const deps = makeDeps()
+    const session = createCopilotSession(makeConfig(), deps)
+
+    await session.start()
+
+    const sessionConfigArg = (
+      deps.clientHandle.createSession as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0] as {
+      tools?: Array<{ name: string; handler: (...args: unknown[]) => unknown }>
+    }
+
+    expect(Array.isArray(sessionConfigArg.tools)).toBe(true)
+    expect(sessionConfigArg.tools).toHaveLength(1)
+    expect(sessionConfigArg.tools![0].name).toBe(
+      CHATROOM_SEND_MESSAGE_TOOL_NAME,
+    )
+  })
+
+  it('the registered send_message tool posts to ChatroomTools.sendMessage', async () => {
     const deps = makeDeps()
     const session = createCopilotSession(makeConfig(), deps)
 
     await session.start()
 
     const tools = mockCreateChatroomTools.mock.results[0].value
-    const assistantHandler =
-      deps.sessionHandle._handlers.get('assistant.message')
-    expect(assistantHandler).toBeDefined()
+    const sessionConfigArg = (
+      deps.clientHandle.createSession as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0] as {
+      tools: Array<{
+        name: string
+        handler: (args: {
+          text: string
+          mentions?: string[]
+        }) => Promise<unknown>
+      }>
+    }
 
-    assistantHandler!({ data: { content: 'Hello from Copilot!' } })
-    await new Promise((r) => setTimeout(r, 0))
+    await sessionConfigArg.tools[0].handler({
+      text: 'agent reply',
+      mentions: ['alice'],
+    })
 
-    expect(tools.sendMessage).toHaveBeenCalledWith('Hello from Copilot!')
-  })
-
-  it('filters out "skip" replies (case insensitive)', async () => {
-    const deps = makeDeps()
-    const session = createCopilotSession(makeConfig(), deps)
-
-    await session.start()
-
-    const tools = mockCreateChatroomTools.mock.results[0].value
-    const assistantHandler =
-      deps.sessionHandle._handlers.get('assistant.message')
-
-    assistantHandler!({ data: { content: 'skip' } })
-    assistantHandler!({ data: { content: 'SKIP' } })
-    assistantHandler!({ data: { content: '  Skip  ' } })
-    await new Promise((r) => setTimeout(r, 0))
-
-    expect(tools.sendMessage).not.toHaveBeenCalled()
-  })
-
-  it('ignores assistant.message with non-string content', async () => {
-    const deps = makeDeps()
-    const session = createCopilotSession(makeConfig(), deps)
-
-    await session.start()
-
-    const tools = mockCreateChatroomTools.mock.results[0].value
-    const assistantHandler =
-      deps.sessionHandle._handlers.get('assistant.message')
-
-    assistantHandler!({ data: { content: 123 } })
-    await new Promise((r) => setTimeout(r, 0))
-
-    expect(tools.sendMessage).not.toHaveBeenCalled()
-  })
-
-  it('catches sendMessage errors from the assistant.message handler', async () => {
-    const toolsMock = makeTools()
-    toolsMock.sendMessage.mockRejectedValue(new Error('chatroom disconnected'))
-    mockCreateChatroomTools.mockReturnValue(toolsMock as never)
-
-    const deps = makeDeps()
-    const session = createCopilotSession(makeConfig(), deps)
-    await session.start()
-
-    const assistantHandler =
-      deps.sessionHandle._handlers.get('assistant.message')
-
-    // Should not throw
-    assistantHandler!({ data: { content: 'Hello' } })
-    await new Promise((r) => setTimeout(r, 0))
-
-    expect(toolsMock.sendMessage).toHaveBeenCalledWith('Hello')
-    expect(session.status).toBe('running')
-  })
-
-  it('does not post assistant messages after abort', async () => {
-    const deps = makeDeps()
-    const session = createCopilotSession(makeConfig(), deps)
-
-    await session.start()
-
-    const tools = mockCreateChatroomTools.mock.results[0].value
-    await session.stop()
-    ;(tools.sendMessage as ReturnType<typeof vi.fn>).mockClear()
-
-    const assistantHandler =
-      deps.sessionHandle._handlers.get('assistant.message')
-    assistantHandler!({ data: { content: 'Too late' } })
-    await new Promise((r) => setTimeout(r, 0))
-
-    expect(tools.sendMessage).not.toHaveBeenCalled()
+    expect(tools.sendMessage).toHaveBeenCalledWith('agent reply', ['alice'])
   })
 
   it('stop() calls session disconnect, tools.close, and fires stopped', async () => {

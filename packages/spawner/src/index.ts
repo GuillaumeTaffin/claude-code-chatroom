@@ -29,11 +29,12 @@ export {
 export type {
   ClaudeAgentDependencies,
   ClaudeQueryHandle,
+  ChatroomMcpHandlers,
 } from './claude-adapter.js'
 export {
   createCopilotSession,
   createCopilotSessionFactory,
-  extractCopilotText,
+  buildSendMessageTool,
 } from './copilot-adapter.js'
 export type {
   CopilotAgentDependencies,

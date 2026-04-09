@@ -17,12 +17,30 @@ export interface ClaudeQueryHandle {
   [Symbol.asyncIterator](): AsyncIterator<unknown>
 }
 
+/**
+ * Minimal surface a chatroom MCP server needs from the spawner. We pass this
+ * (rather than the full ChatroomTools) so the server-side factory can build
+ * an in-process MCP server without depending on spawner internals.
+ */
+export interface ChatroomMcpHandlers {
+  sendMessage(text: string, mentions?: string[]): Promise<void>
+}
+
 export interface ClaudeAgentDependencies {
   query: (options: {
     prompt: string | AsyncIterable<unknown>
     options?: Record<string, unknown>
   }) => ClaudeQueryHandle
+  /**
+   * Builds an in-process MCP server exposing the chatroom `send_message` tool.
+   * The returned value is passed straight through to the Claude SDK as an
+   * `mcpServers` entry; spawner does not introspect it.
+   */
+  createChatroomMcpServer: (handlers: ChatroomMcpHandlers) => unknown
 }
+
+export const CHATROOM_MCP_SERVER_NAME = 'chatroom'
+export const CHATROOM_SEND_MESSAGE_TOOL = 'mcp__chatroom__send_message'
 
 export function buildPrompt(config: AgentSessionConfig): string {
   const parts = [
@@ -31,9 +49,8 @@ export function buildPrompt(config: AgentSessionConfig): string {
     `You are participating in a live group chatroom with humans and other agents.`,
     `You are ALREADY CONNECTED to the chatroom — you do not need to write any code, run any scripts, or make any HTTP/WebSocket calls to connect.`,
     `Messages from other participants will be delivered to you automatically as new user turns, formatted as "[sender]: text".`,
-    `Whatever plain-text response you produce will be automatically posted to the chatroom as a message from you.`,
-    `Just talk naturally — reply in plain text. Do not narrate your actions, do not write scripts, do not call tools to send messages.`,
-    `Wait until you are addressed (by name or by context) before responding. If a message is not for you, stay quiet.`,
+    `To reply in the chatroom you MUST call the \`send_message\` MCP tool with \`{ text, mentions? }\`. Plain-text output is NOT delivered to anyone — only \`send_message\` calls reach the chat.`,
+    `Wait until you are addressed (by name or by context) before responding. If a message is not for you, do nothing — do not call \`send_message\`.`,
     `Keep replies concise and conversational unless asked for detail.`,
   ]
   if (config.systemPrompt) {
@@ -44,27 +61,15 @@ export function buildPrompt(config: AgentSessionConfig): string {
 
 async function runAgentLoop(
   queryHandle: ClaudeQueryHandle,
-  tools: ChatroomTools,
   abortedRef: { value: boolean },
 ) {
-  for await (const message of queryHandle) {
+  // Drain the iterator so the SDK can keep making progress (and so abort
+  // is honored). The agent posts to the chatroom by calling the MCP
+  // `send_message` tool, so we deliberately do NOT relay assistant text
+  // output to the chatroom from here.
+  for await (const _message of queryHandle) {
+    void _message
     if (abortedRef.value) break
-    if (message && typeof message === 'object' && 'type' in message) {
-      const msg = message as {
-        type: string
-        message?: { content?: unknown[] }
-      }
-      if (msg.type === 'assistant' && msg.message?.content) {
-        const textBlocks = (
-          msg.message.content as Array<{ type: string; text?: string }>
-        )
-          .filter((b) => b.type === 'text' && b.text)
-          .map((b) => b.text!)
-        if (textBlocks.length > 0) {
-          await tools.sendMessage(textBlocks.join('\n'))
-        }
-      }
-    }
   }
 }
 
@@ -107,6 +112,10 @@ export function createClaudeSession(
       await tools.connect()
       fireStatusChange('connected')
 
+      const chatroomMcpServer = deps.createChatroomMcpServer({
+        sendMessage: (text, mentions) => tools!.sendMessage(text, mentions),
+      })
+
       // Create a message queue: agent blocks until a chatroom message arrives,
       // then yields it as a user turn. No fake initial prompt.
       const messageQueue: Array<{
@@ -138,6 +147,8 @@ export function createClaudeSession(
           maxTurns: config.maxTurns,
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
+          mcpServers: { [CHATROOM_MCP_SERVER_NAME]: chatroomMcpServer },
+          allowedTools: [CHATROOM_SEND_MESSAGE_TOOL],
         },
       })
 
@@ -159,7 +170,7 @@ export function createClaudeSession(
 
       fireStatusChange('running')
 
-      runAgentLoop(queryHandle, tools, abortedRef)
+      runAgentLoop(queryHandle, abortedRef)
         .then(() => {
           if (!abortedRef.value) fireStatusChange('stopped')
         })

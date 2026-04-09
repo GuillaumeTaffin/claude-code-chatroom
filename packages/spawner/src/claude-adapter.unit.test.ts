@@ -4,6 +4,7 @@ import type { AgentSessionConfig } from './agent-session.js'
 import type {
   ClaudeAgentDependencies,
   ClaudeQueryHandle,
+  ChatroomMcpHandlers,
 } from './claude-adapter.js'
 
 vi.mock('./chatroom-tools.js', () => ({
@@ -21,6 +22,8 @@ import {
   createClaudeSession,
   createClaudeSessionFactory,
   buildPrompt,
+  CHATROOM_MCP_SERVER_NAME,
+  CHATROOM_SEND_MESSAGE_TOOL,
 } from './claude-adapter.js'
 
 const mockCreateChatroomTools = vi.mocked(createChatroomTools)
@@ -80,6 +83,8 @@ function createControllableQueryHandle() {
   }
 }
 
+const MCP_SENTINEL = { __sentinel: 'chatroom-mcp' }
+
 function makeDeps(
   overrides: Partial<ClaudeAgentDependencies> = {},
 ): ClaudeAgentDependencies {
@@ -92,6 +97,9 @@ function makeDeps(
         setTimeout(() => ctrl.complete(), 0)
         return ctrl.queryHandle
       }),
+    createChatroomMcpServer:
+      overrides.createChatroomMcpServer ??
+      vi.fn().mockReturnValue(MCP_SENTINEL),
   }
 }
 
@@ -114,11 +122,12 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('A helpful test agent')
   })
 
-  it('explains the agent is already connected and should not write scripts', () => {
+  it('explains the agent is already connected and instructs MCP send_message', () => {
     const prompt = buildPrompt(makeConfig())
 
     expect(prompt).toContain('ALREADY CONNECTED')
-    expect(prompt).toContain('do not write scripts')
+    expect(prompt).toContain('`send_message` MCP tool')
+    expect(prompt).toContain('Plain-text output is NOT delivered')
   })
 
   it('includes custom system prompt when provided', () => {
@@ -180,6 +189,7 @@ describe('createClaudeSession', () => {
     const ctrl = createControllableQueryHandle()
     const deps: ClaudeAgentDependencies = {
       query: vi.fn().mockReturnValue(ctrl.queryHandle),
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
     }
     const session = createClaudeSession(makeConfig(), deps)
     session.onStatusChange((s) => statuses.push(s))
@@ -199,6 +209,7 @@ describe('createClaudeSession', () => {
     const ctrl = createControllableQueryHandle()
     const deps: ClaudeAgentDependencies = {
       query: vi.fn().mockReturnValue(ctrl.queryHandle),
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
     }
     const session = createClaudeSession(makeConfig(), deps)
     session.onStatusChange((s) => statuses.push(s))
@@ -218,6 +229,7 @@ describe('createClaudeSession', () => {
     const ctrl = createControllableQueryHandle()
     const deps: ClaudeAgentDependencies = {
       query: vi.fn().mockReturnValue(ctrl.queryHandle),
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
     }
     const session = createClaudeSession(makeConfig(), deps)
     session.onStatusChange((s) => statuses.push(s))
@@ -242,6 +254,7 @@ describe('createClaudeSession', () => {
     const ctrl = createControllableQueryHandle()
     const deps: ClaudeAgentDependencies = {
       query: vi.fn().mockReturnValue(ctrl.queryHandle),
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
     }
     const session = createClaudeSession(makeConfig(), deps)
     session.onStatusChange((s) => statuses.push(s))
@@ -273,6 +286,7 @@ describe('createClaudeSession', () => {
     const ctrl = createControllableQueryHandle()
     const deps: ClaudeAgentDependencies = {
       query: vi.fn().mockReturnValue(ctrl.queryHandle),
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
     }
     const session = createClaudeSession(makeConfig(), deps)
     session.onStatusChange((s) => statuses.push(s))
@@ -304,7 +318,10 @@ describe('createClaudeSession', () => {
       model: 'claude-4',
       maxTurns: 5,
     })
-    const session = createClaudeSession(config, { query: queryFn })
+    const session = createClaudeSession(config, {
+      query: queryFn,
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
+    })
 
     await session.start()
     await new Promise((r) => setTimeout(r, 0))
@@ -329,7 +346,10 @@ describe('createClaudeSession', () => {
       return ctrl.queryHandle
     })
     const config = makeConfig()
-    const session = createClaudeSession(config, { query: queryFn })
+    const session = createClaudeSession(config, {
+      query: queryFn,
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
+    })
 
     await session.start()
     await new Promise((r) => setTimeout(r, 0))
@@ -347,7 +367,10 @@ describe('createClaudeSession', () => {
       return ctrl.queryHandle
     })
     const config = makeConfig()
-    const session = createClaudeSession(config, { query: queryFn })
+    const session = createClaudeSession(config, {
+      query: queryFn,
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
+    })
 
     await session.start()
     await new Promise((r) => setTimeout(r, 0))
@@ -363,6 +386,7 @@ describe('createClaudeSession', () => {
     const ctrl = createControllableQueryHandle()
     const deps: ClaudeAgentDependencies = {
       query: vi.fn().mockReturnValue(ctrl.queryHandle),
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
     }
     const session = createClaudeSession(makeConfig(), deps)
 
@@ -378,7 +402,10 @@ describe('createClaudeSession', () => {
       setTimeout(() => ctrl.complete(), 0)
       return ctrl.queryHandle
     })
-    const session = createClaudeSession(makeConfig(), { query: queryFn })
+    const session = createClaudeSession(makeConfig(), {
+      query: queryFn,
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
+    })
 
     await session.start()
 
@@ -424,7 +451,10 @@ describe('createClaudeSession', () => {
       setTimeout(() => ctrl.complete(), 0)
       return ctrl.queryHandle
     })
-    const session = createClaudeSession(makeConfig(), { query: queryFn })
+    const session = createClaudeSession(makeConfig(), {
+      query: queryFn,
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
+    })
 
     await session.start()
 
@@ -468,7 +498,10 @@ describe('createClaudeSession', () => {
       setTimeout(() => ctrl.complete(), 0)
       return ctrl.queryHandle
     })
-    const session = createClaudeSession(makeConfig(), { query: queryFn })
+    const session = createClaudeSession(makeConfig(), {
+      query: queryFn,
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
+    })
 
     await session.start()
 
@@ -487,10 +520,13 @@ describe('createClaudeSession', () => {
     expect(result.done).toBe(true)
   })
 
-  it('posts assistant text messages to chatroom via sendMessage', async () => {
+  it('does not relay assistant text output to the chatroom', async () => {
+    // Plain-text assistant output must NOT be auto-posted: the agent is
+    // expected to use the `send_message` MCP tool instead.
     const ctrl = createControllableQueryHandle()
     const deps: ClaudeAgentDependencies = {
       query: vi.fn().mockReturnValue(ctrl.queryHandle),
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
     }
     const session = createClaudeSession(makeConfig(), deps)
 
@@ -498,7 +534,6 @@ describe('createClaudeSession', () => {
 
     const tools = mockCreateChatroomTools.mock.results[0].value
 
-    // Yield an assistant message with text content
     ctrl.yieldValue({
       type: 'assistant',
       message: {
@@ -507,189 +542,84 @@ describe('createClaudeSession', () => {
     })
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(tools.sendMessage).toHaveBeenCalledWith('Hello from agent!')
-  })
-
-  it('joins multiple text blocks with newline', async () => {
-    const ctrl = createControllableQueryHandle()
-    const deps: ClaudeAgentDependencies = {
-      query: vi.fn().mockReturnValue(ctrl.queryHandle),
-    }
-    const session = createClaudeSession(makeConfig(), deps)
-
-    await session.start()
-
-    const tools = mockCreateChatroomTools.mock.results[0].value
-
-    ctrl.yieldValue({
-      type: 'assistant',
-      message: {
-        content: [
-          { type: 'text', text: 'Line 1' },
-          { type: 'text', text: 'Line 2' },
-        ],
-      },
-    })
-    await new Promise((r) => setTimeout(r, 0))
-
-    expect(tools.sendMessage).toHaveBeenCalledWith('Line 1\nLine 2')
-  })
-
-  it('skips non-text content blocks', async () => {
-    const ctrl = createControllableQueryHandle()
-    const deps: ClaudeAgentDependencies = {
-      query: vi.fn().mockReturnValue(ctrl.queryHandle),
-    }
-    const session = createClaudeSession(makeConfig(), deps)
-
-    await session.start()
-
-    const tools = mockCreateChatroomTools.mock.results[0].value
-
-    ctrl.yieldValue({
-      type: 'assistant',
-      message: {
-        content: [
-          { type: 'tool_use', id: 'tool-1' },
-          { type: 'text', text: 'Result' },
-        ],
-      },
-    })
-    await new Promise((r) => setTimeout(r, 0))
-
-    expect(tools.sendMessage).toHaveBeenCalledWith('Result')
-  })
-
-  it('skips assistant messages with no text blocks', async () => {
-    const ctrl = createControllableQueryHandle()
-    const deps: ClaudeAgentDependencies = {
-      query: vi.fn().mockReturnValue(ctrl.queryHandle),
-    }
-    const session = createClaudeSession(makeConfig(), deps)
-
-    await session.start()
-
-    const tools = mockCreateChatroomTools.mock.results[0].value
-
-    ctrl.yieldValue({
-      type: 'assistant',
-      message: {
-        content: [{ type: 'tool_use', id: 'tool-1' }],
-      },
-    })
-    await new Promise((r) => setTimeout(r, 0))
-
     expect(tools.sendMessage).not.toHaveBeenCalled()
   })
 
-  it('skips non-assistant messages', async () => {
-    const ctrl = createControllableQueryHandle()
-    const deps: ClaudeAgentDependencies = {
-      query: vi.fn().mockReturnValue(ctrl.queryHandle),
-    }
-    const session = createClaudeSession(makeConfig(), deps)
-
-    await session.start()
-
-    const tools = mockCreateChatroomTools.mock.results[0].value
-
-    ctrl.yieldValue({
-      type: 'user',
-      message: { content: [{ type: 'text', text: 'User message' }] },
+  it('passes the chatroom MCP server through to query() options', async () => {
+    const queryFn = vi.fn(() => {
+      const ctrl = createControllableQueryHandle()
+      setTimeout(() => ctrl.complete(), 0)
+      return ctrl.queryHandle
     })
+    const createChatroomMcpServer = vi.fn().mockReturnValue(MCP_SENTINEL)
+    const session = createClaudeSession(makeConfig(), {
+      query: queryFn,
+      createChatroomMcpServer,
+    })
+
+    await session.start()
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(tools.sendMessage).not.toHaveBeenCalled()
+    expect(createChatroomMcpServer).toHaveBeenCalledWith({
+      sendMessage: expect.any(Function),
+    })
+
+    const callArgs = (queryFn.mock.calls as unknown as unknown[][])[0][0] as {
+      options: Record<string, unknown>
+    }
+    expect(callArgs.options.mcpServers).toEqual({
+      [CHATROOM_MCP_SERVER_NAME]: MCP_SENTINEL,
+    })
+    expect(callArgs.options.allowedTools).toEqual([CHATROOM_SEND_MESSAGE_TOOL])
   })
 
-  it('skips messages without content', async () => {
-    const ctrl = createControllableQueryHandle()
-    const deps: ClaudeAgentDependencies = {
-      query: vi.fn().mockReturnValue(ctrl.queryHandle),
-    }
-    const session = createClaudeSession(makeConfig(), deps)
+  it('chatroom MCP handler delegates send_message to ChatroomTools.sendMessage', async () => {
+    const queryFn = vi.fn(() => {
+      const ctrl = createControllableQueryHandle()
+      setTimeout(() => ctrl.complete(), 0)
+      return ctrl.queryHandle
+    })
+    const createChatroomMcpServer = vi.fn().mockReturnValue(MCP_SENTINEL)
+    const session = createClaudeSession(makeConfig(), {
+      query: queryFn,
+      createChatroomMcpServer,
+    })
 
     await session.start()
 
     const tools = mockCreateChatroomTools.mock.results[0].value
+    const handlers = (
+      createChatroomMcpServer.mock.calls[0] as [ChatroomMcpHandlers]
+    )[0]
 
-    ctrl.yieldValue({ type: 'assistant', message: {} })
-    await new Promise((r) => setTimeout(r, 0))
-
-    expect(tools.sendMessage).not.toHaveBeenCalled()
+    await handlers.sendMessage('hi from tool', ['alice'])
+    expect(tools.sendMessage).toHaveBeenCalledWith('hi from tool', ['alice'])
   })
 
-  it('skips messages without message property', async () => {
+  it('drains the iterator without crashing on arbitrary message shapes', async () => {
+    // The agent loop must tolerate any value the SDK yields (it no longer
+    // inspects message shape) and exit cleanly when the iterator completes.
     const ctrl = createControllableQueryHandle()
     const deps: ClaudeAgentDependencies = {
       query: vi.fn().mockReturnValue(ctrl.queryHandle),
+      createChatroomMcpServer: vi.fn().mockReturnValue(MCP_SENTINEL),
     }
+    const statuses: SpawnedAgentStatus[] = []
     const session = createClaudeSession(makeConfig(), deps)
+    session.onStatusChange((s) => statuses.push(s))
 
     await session.start()
-
-    const tools = mockCreateChatroomTools.mock.results[0].value
-
-    ctrl.yieldValue({ type: 'assistant' })
-    await new Promise((r) => setTimeout(r, 0))
-
-    expect(tools.sendMessage).not.toHaveBeenCalled()
-  })
-
-  it('skips null/undefined yielded values', async () => {
-    const ctrl = createControllableQueryHandle()
-    const deps: ClaudeAgentDependencies = {
-      query: vi.fn().mockReturnValue(ctrl.queryHandle),
-    }
-    const session = createClaudeSession(makeConfig(), deps)
-
-    await session.start()
-
-    const tools = mockCreateChatroomTools.mock.results[0].value
 
     ctrl.yieldValue(null)
     await new Promise((r) => setTimeout(r, 0))
-
-    expect(tools.sendMessage).not.toHaveBeenCalled()
-  })
-
-  it('skips yielded values without type property', async () => {
-    const ctrl = createControllableQueryHandle()
-    const deps: ClaudeAgentDependencies = {
-      query: vi.fn().mockReturnValue(ctrl.queryHandle),
-    }
-    const session = createClaudeSession(makeConfig(), deps)
-
-    await session.start()
-
-    const tools = mockCreateChatroomTools.mock.results[0].value
-
-    ctrl.yieldValue({ data: 'something' })
+    ctrl.yieldValue({ random: 'shape' })
+    await new Promise((r) => setTimeout(r, 0))
+    ctrl.complete()
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(tools.sendMessage).not.toHaveBeenCalled()
-  })
-
-  it('skips text blocks with empty text', async () => {
-    const ctrl = createControllableQueryHandle()
-    const deps: ClaudeAgentDependencies = {
-      query: vi.fn().mockReturnValue(ctrl.queryHandle),
-    }
-    const session = createClaudeSession(makeConfig(), deps)
-
-    await session.start()
-
     const tools = mockCreateChatroomTools.mock.results[0].value
-
-    ctrl.yieldValue({
-      type: 'assistant',
-      message: {
-        content: [{ type: 'text', text: '' }],
-      },
-    })
-    await new Promise((r) => setTimeout(r, 0))
-
     expect(tools.sendMessage).not.toHaveBeenCalled()
+    expect(statuses).toEqual(['connected', 'running', 'stopped'])
   })
 })
 
