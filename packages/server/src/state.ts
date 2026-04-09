@@ -1538,7 +1538,7 @@ export function createProjectChatDependencies({
       workspaceAllocationInventory ??
       new InMemoryWorkspaceAllocationInventory(resolvedRunInventory),
     timelineInventory: resolvedTimelineInventory,
-    ...(spawnManager ? { spawnManager } : {}),
+    spawnManager,
   }
 }
 

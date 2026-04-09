@@ -3,7 +3,12 @@ export type {
   AgentSessionConfig,
   AgentSessionFactory,
 } from './agent-session.js'
-export type { ChatroomTools, ChatroomToolsConfig } from './chatroom-tools.js'
+export type {
+  ChatroomTools,
+  ChatroomToolsConfig,
+  ChatroomMessage,
+  ChatroomMessageCallback,
+} from './chatroom-tools.js'
 export { createChatroomTools } from './chatroom-tools.js'
 export type {
   ProjectAgentMember,
@@ -21,10 +26,14 @@ export {
   createClaudeSessionFactory,
   buildPrompt,
 } from './claude-adapter.js'
-export type { ClaudeAgentDependencies } from './claude-adapter.js'
+export type {
+  ClaudeAgentDependencies,
+  ClaudeQueryHandle,
+} from './claude-adapter.js'
 export {
   createCopilotSession,
   createCopilotSessionFactory,
+  extractCopilotText,
 } from './copilot-adapter.js'
 export type {
   CopilotAgentDependencies,

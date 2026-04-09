@@ -87,6 +87,23 @@ export function createCopilotSession(
       const prompt = buildCopilotPrompt(config)
       sessionHandle.send({ prompt })
 
+      tools.onMessage((msg) => {
+        if (!aborted && sessionHandle) {
+          sessionHandle.send({ prompt: `[${msg.sender}]: ${msg.text}` })
+        }
+      })
+
+      sessionHandle.on('assistant.message', (data: unknown) => {
+        if (!aborted && tools) {
+          const content = extractCopilotText(data)
+          if (content) {
+            tools.sendMessage(content).catch(() => {
+              // chatroom may have disconnected
+            })
+          }
+        }
+      })
+
       sessionHandle.on('session.idle', () => {
         if (!aborted) fireStatusChange('stopped')
       })
@@ -107,6 +124,18 @@ export function createCopilotSession(
       listeners.push(cb)
     },
   }
+}
+
+export function extractCopilotText(data: unknown): string | null {
+  if (
+    data &&
+    typeof data === 'object' &&
+    'content' in data &&
+    typeof (data as { content: unknown }).content === 'string'
+  ) {
+    return (data as { content: string }).content
+  }
+  return null
 }
 
 export function createCopilotSessionFactory(

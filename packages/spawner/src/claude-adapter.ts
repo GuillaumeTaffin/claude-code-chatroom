@@ -6,6 +6,17 @@ import type {
 import type { SpawnedAgentStatus } from './types.js'
 import { createChatroomTools, type ChatroomTools } from './chatroom-tools.js'
 
+export interface ClaudeQueryHandle {
+  streamInput(
+    input: AsyncIterable<{
+      type: 'user'
+      message: { role: 'user'; content: string }
+      parent_tool_use_id: null
+    }>,
+  ): Promise<void>
+  [Symbol.asyncIterator](): AsyncIterator<unknown>
+}
+
 export interface ClaudeAgentDependencies {
   query: (options: {
     prompt: string
@@ -16,8 +27,9 @@ export interface ClaudeAgentDependencies {
       mcpServers?: Record<string, unknown>
       allowedTools?: string[]
       permissionMode?: string
+      allowDangerouslySkipPermissions?: boolean
     }
-  }) => AsyncGenerator<unknown>
+  }) => ClaudeQueryHandle
 }
 
 export function buildPrompt(config: AgentSessionConfig): string {
@@ -33,6 +45,32 @@ export function buildPrompt(config: AgentSessionConfig): string {
   return parts.join('\n')
 }
 
+async function runAgentLoop(
+  queryHandle: ClaudeQueryHandle,
+  tools: ChatroomTools,
+  abortedRef: { value: boolean },
+) {
+  for await (const message of queryHandle) {
+    if (abortedRef.value) break
+    if (message && typeof message === 'object' && 'type' in message) {
+      const msg = message as {
+        type: string
+        message?: { content?: unknown[] }
+      }
+      if (msg.type === 'assistant' && msg.message?.content) {
+        const textBlocks = (
+          msg.message.content as Array<{ type: string; text?: string }>
+        )
+          .filter((b) => b.type === 'text' && b.text)
+          .map((b) => b.text!)
+        if (textBlocks.length > 0) {
+          await tools.sendMessage(textBlocks.join('\n'))
+        }
+      }
+    }
+  }
+}
+
 export function createClaudeSession(
   config: AgentSessionConfig,
   deps: ClaudeAgentDependencies,
@@ -40,30 +78,11 @@ export function createClaudeSession(
   let status: SpawnedAgentStatus = 'starting'
   const listeners: Array<(s: SpawnedAgentStatus) => void> = []
   let tools: ChatroomTools | null = null
-  let aborted = false
+  const abortedRef = { value: false }
 
   function fireStatusChange(newStatus: SpawnedAgentStatus) {
     status = newStatus
     for (const cb of listeners) cb(newStatus)
-  }
-
-  async function runAgentLoop() {
-    const prompt = buildPrompt(config)
-
-    const generator = deps.query({
-      prompt,
-      options: {
-        systemPrompt: config.systemPrompt ?? config.roleDescription,
-        model: config.model,
-        maxTurns: config.maxTurns,
-      },
-    })
-
-    let done = false
-    while (!done && !aborted) {
-      const result = await generator.next()
-      done = !!result.done
-    }
   }
 
   return {
@@ -90,18 +109,50 @@ export function createClaudeSession(
       await tools.connect()
       fireStatusChange('connected')
 
+      const prompt = buildPrompt(config)
+      const queryHandle = deps.query({
+        prompt,
+        options: {
+          systemPrompt: config.systemPrompt ?? config.roleDescription,
+          model: config.model,
+          maxTurns: config.maxTurns,
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
+        },
+      })
+
+      tools.onMessage(async (msg) => {
+        try {
+          await queryHandle.streamInput(
+            (async function* () {
+              yield {
+                type: 'user' as const,
+                message: {
+                  role: 'user' as const,
+                  content: `[${msg.sender}]: ${msg.text}`,
+                },
+                parent_tool_use_id: null,
+              }
+            })(),
+          )
+        } catch {
+          // session may have ended
+        }
+      })
+
       fireStatusChange('running')
-      runAgentLoop()
+
+      runAgentLoop(queryHandle, tools, abortedRef)
         .then(() => {
-          if (!aborted) fireStatusChange('stopped')
+          if (!abortedRef.value) fireStatusChange('stopped')
         })
         .catch(() => {
-          if (!aborted) fireStatusChange('errored')
+          if (!abortedRef.value) fireStatusChange('errored')
         })
     },
 
     async stop() {
-      aborted = true
+      abortedRef.value = true
       tools?.close()
       fireStatusChange('stopped')
     },
