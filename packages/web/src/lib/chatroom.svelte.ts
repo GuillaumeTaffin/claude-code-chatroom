@@ -15,6 +15,7 @@ import {
 	type MemberJoinedParams,
 	type MemberLeftParams,
 	type MembersResponse,
+	type RuntimeIdentity,
 	type NewMessageParams,
 	type Playbook,
 	type PlaybookId,
@@ -58,6 +59,7 @@ export interface ChatMember {
 	name: string
 	description: string
 	channel_id: string
+	runtime?: RuntimeIdentity
 }
 
 export type ChatProject = Project
@@ -320,7 +322,12 @@ export function createChatroomModel(
 			if (!response.ok) return
 
 			const data = (await response.json()) as MembersResponse
-			members = data.members
+			members = data.members.map((member) => ({
+				name: member.name,
+				description: member.description,
+				channel_id: member.channel_id,
+				...(member.runtime ? { runtime: member.runtime } : {}),
+			}))
 		} catch {
 			// Deliberately swallow member refresh failures. A stale member list is better
 			// than failing the connection flow after registration succeeded.
@@ -530,6 +537,12 @@ export function createChatroomModel(
 							channelId || getActiveProject()?.channel_id || connectedProjectId,
 					},
 				]
+				// Backfill runtime info (member_joined notifications don't carry it,
+				// but the /members endpoint does — needed for the agent vs human split).
+				const projectIdForRefresh = connectedProjectId
+				if (projectIdForRefresh) {
+					void refreshMembers(projectIdForRefresh)
+				}
 				break
 			}
 
