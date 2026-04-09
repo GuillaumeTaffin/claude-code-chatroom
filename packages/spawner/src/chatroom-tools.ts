@@ -36,7 +36,8 @@ export function createChatroomTools(
   const client = createChatroomClient({
     env: { CHATROOM_URL: config.serverUrl },
     fetchImpl: fetch,
-    WebSocketImpl: globalThis.WebSocket as unknown as ConnectorSocketConstructor,
+    WebSocketImpl:
+      globalThis.WebSocket as unknown as ConnectorSocketConstructor,
   })
 
   const messageCallbacks: ChatroomMessageCallback[] = []
