@@ -7,17 +7,14 @@ import type { SpawnedAgentStatus } from './types.js'
 import { createChatroomTools, type ChatroomTools } from './chatroom-tools.js'
 
 export interface CopilotSessionHandle {
-  send(options: { prompt: string }): void
-  on(event: string, callback: (data: unknown) => void): void
-  close(): Promise<void>
+  send(options: { prompt: string }): Promise<string> | string
+  on(event: string, callback: (data: unknown) => void): unknown
+  disconnect(): Promise<void>
 }
 
 export interface CopilotClientHandle {
-  createSession(options?: {
-    systemPrompt?: string
-    model?: string
-    tools?: unknown[]
-  }): Promise<CopilotSessionHandle>
+  createSession(config: Record<string, unknown>): Promise<CopilotSessionHandle>
+  stop?(): Promise<unknown>
 }
 
 export interface CopilotAgentDependencies {
@@ -27,12 +24,17 @@ export interface CopilotAgentDependencies {
 export function buildCopilotPrompt(config: AgentSessionConfig): string {
   const parts = [
     `You are "${config.agentName}", ${config.roleDescription}.`,
-    `You are participating in a project chatroom.`,
-    `The chatroom server is at ${config.serverUrl}.`,
-    `Your project ID is "${config.projectId}" and run ID is "${config.runId}".`,
+    ``,
+    `You are participating in a live group chatroom with humans and other agents.`,
+    `You are ALREADY CONNECTED to the chatroom — you do not need to write any code, run any scripts, or make any HTTP/WebSocket calls to connect.`,
+    `Messages from other participants will be delivered to you as new prompts, formatted as "[sender]: text".`,
+    `Whatever plain-text response you produce will be automatically posted to the chatroom as a message from you.`,
+    `Just talk naturally — reply in plain text. Do not narrate your actions, do not write scripts, do not call tools to send messages.`,
+    `Wait until you are addressed (by name or by context) before responding. If a message is not for you, stay quiet by replying with the single word "skip".`,
+    `Keep replies concise and conversational unless asked for detail.`,
   ]
   if (config.systemPrompt) {
-    parts.push(config.systemPrompt)
+    parts.push('', config.systemPrompt)
   }
   return parts.join('\n')
 }
@@ -77,45 +79,54 @@ export function createCopilotSession(
       fireStatusChange('connected')
 
       const client = deps.createClient()
-      sessionHandle = await client.createSession({
-        systemPrompt: config.systemPrompt ?? config.roleDescription,
-        model: config.model,
-      })
+      const sessionConfig: Record<string, unknown> = {
+        // approveAll permission handler — accepts all tool requests since
+        // the agent only needs to talk in the chatroom
+        onPermissionRequest: async () => ({ allowed: true }),
+        systemMessage: {
+          mode: 'replace',
+          content: buildCopilotPrompt(config),
+        },
+      }
+      if (config.model) {
+        sessionConfig.model = config.model
+      }
+      sessionHandle = await client.createSession(sessionConfig)
 
       fireStatusChange('running')
 
-      const prompt = buildCopilotPrompt(config)
-      sessionHandle.send({ prompt })
-
       tools.onMessage((msg) => {
         if (!aborted && sessionHandle) {
-          sessionHandle.send({ prompt: `[${msg.sender}]: ${msg.text}` })
+          // Skip our own messages (chatroom-tools already filters but be safe)
+          if (msg.sender === config.agentName) return
+          // Skip if the agent sent a "skip" reply (defensive)
+          void Promise.resolve(
+            sessionHandle.send({ prompt: `[${msg.sender}]: ${msg.text}` }),
+          ).catch(() => {
+            // session may have ended
+          })
         }
       })
 
-      sessionHandle.on('assistant.message', (data: unknown) => {
+      sessionHandle.on('assistant.message', (event: unknown) => {
         if (!aborted && tools) {
-          const content = extractCopilotText(data)
-          if (content) {
+          const content = extractCopilotText(event)
+          if (content && content.trim().toLowerCase() !== 'skip') {
             tools.sendMessage(content).catch(() => {
               // chatroom may have disconnected
             })
           }
         }
       })
-
-      sessionHandle.on('session.idle', () => {
-        if (!aborted) fireStatusChange('stopped')
-      })
-
-      sessionHandle.on('error', () => {
-        if (!aborted) fireStatusChange('errored')
-      })
     },
 
     async stop() {
       aborted = true
-      await sessionHandle?.close()
+      try {
+        await sessionHandle?.disconnect()
+      } catch {
+        // session may already be closed
+      }
       tools?.close()
       fireStatusChange('stopped')
     },
@@ -126,14 +137,17 @@ export function createCopilotSession(
   }
 }
 
-export function extractCopilotText(data: unknown): string | null {
+export function extractCopilotText(event: unknown): string | null {
   if (
-    data &&
-    typeof data === 'object' &&
-    'content' in data &&
-    typeof (data as { content: unknown }).content === 'string'
+    event &&
+    typeof event === 'object' &&
+    'data' in event &&
+    event.data &&
+    typeof event.data === 'object' &&
+    'content' in event.data &&
+    typeof (event.data as { content: unknown }).content === 'string'
   ) {
-    return (data as { content: string }).content
+    return (event.data as { content: string }).content
   }
   return null
 }
