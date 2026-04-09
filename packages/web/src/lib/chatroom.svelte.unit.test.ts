@@ -894,6 +894,7 @@ describe('createChatroomModel', () => {
 		description: 'Handles UI',
 		scope: 'project' as const,
 		project_id: 'project-1',
+		agent_config: null,
 	}
 
 	it('lists roles without query params', async () => {
@@ -978,6 +979,98 @@ describe('createChatroomModel', () => {
 				}),
 			}),
 		)
+	})
+
+	it('creates a role with agentConfig', async () => {
+		const agentRole = {
+			...role,
+			agent_config: {
+				runtime: 'claude' as const,
+				system_prompt: 'You are a helper',
+				model: 'opus',
+			},
+		}
+		const fetchImpl = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(createJsonResponse({ json: { role: agentRole } }))
+
+		const model = createChatroomModel({ fetchImpl })
+		const created = await model.createRole(
+			'Frontend Engineer',
+			'Handles UI',
+			'project',
+			'project-1',
+			{
+				runtime: 'claude',
+				system_prompt: 'You are a helper',
+				model: 'opus',
+			},
+		)
+
+		expect(fetchImpl).toHaveBeenCalledWith(
+			'http://localhost:3000/roles',
+			expect.objectContaining({
+				method: 'POST',
+				body: JSON.stringify({
+					name: 'Frontend Engineer',
+					description: 'Handles UI',
+					scope: 'project',
+					project_id: 'project-1',
+					agent_config: {
+						runtime: 'claude',
+						system_prompt: 'You are a helper',
+						model: 'opus',
+					},
+				}),
+			}),
+		)
+		expect(created).toEqual(agentRole)
+	})
+
+	it('spawns a project agent', async () => {
+		const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
+			createJsonResponse({
+				json: {
+					role_id: 'role-1',
+					agent_name: 'frontend-engineer',
+					runtime: 'claude',
+					status: 'starting',
+				},
+			}),
+		)
+
+		const model = createChatroomModel({ fetchImpl })
+		await model.spawnProjectAgent('project-1', 'role-1')
+
+		expect(fetchImpl).toHaveBeenCalledWith(
+			'http://localhost:3000/projects/project-1/agents/spawn',
+			expect.objectContaining({
+				method: 'POST',
+				body: JSON.stringify({ role_id: 'role-1' }),
+			}),
+		)
+	})
+
+	it('gets project agents', async () => {
+		const agents = [
+			{
+				role_id: 'role-1',
+				agent_name: 'frontend-engineer',
+				runtime: 'claude',
+				status: 'running',
+			},
+		]
+		const fetchImpl = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(createJsonResponse({ json: { agents } }))
+
+		const model = createChatroomModel({ fetchImpl })
+		const result = await model.getProjectAgents('project-1')
+
+		expect(fetchImpl).toHaveBeenCalledWith(
+			'http://localhost:3000/projects/project-1/agents',
+		)
+		expect(result).toEqual(agents)
 	})
 
 	it('updates a role and replaces it in state', async () => {

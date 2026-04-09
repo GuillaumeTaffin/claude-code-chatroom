@@ -71,6 +71,8 @@ vi.mock('$lib/chatroom.svelte.js', () => ({
 	createRole: vi.fn(),
 	updateRole: vi.fn(),
 	deleteRole: vi.fn(),
+	spawnProjectAgent: vi.fn().mockResolvedValue(undefined),
+	getProjectAgents: vi.fn().mockResolvedValue([]),
 	listTeams: vi.fn().mockResolvedValue(undefined),
 	createTeam: vi.fn(),
 	updateTeam: vi.fn(),

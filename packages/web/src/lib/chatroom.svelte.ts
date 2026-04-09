@@ -126,6 +126,11 @@ export interface ChatroomModel {
 		description: string,
 		scope: RoleScope,
 		projectId?: string,
+		agentConfig?: {
+			runtime: string
+			system_prompt: string | null
+			model: string | null
+		},
 	): Promise<Role>
 	updateRole(id: string, name?: string, description?: string): Promise<Role>
 	deleteRole(id: string): Promise<void>
@@ -155,6 +160,16 @@ export interface ChatroomModel {
 		reason?: string,
 	): Promise<Run>
 	selectRun(runId: string): void
+	// Agents
+	spawnProjectAgent(projectId: string, roleId: string): Promise<unknown>
+	getProjectAgents(projectId: string): Promise<
+		Array<{
+			role_id: string
+			agent_name: string
+			runtime: string
+			status: string
+		}>
+	>
 	// Playbooks
 	listPlaybooks(): Promise<void>
 	// Workspaces
@@ -548,6 +563,11 @@ export function createChatroomModel(
 		description: string,
 		scope: RoleScope,
 		projectId?: string,
+		agentConfig?: {
+			runtime: string
+			system_prompt: string | null
+			model: string | null
+		},
 	): Promise<Role> {
 		const response = await dependencies.fetchImpl(
 			`${dependencies.serverUrl}/roles`,
@@ -559,6 +579,7 @@ export function createChatroomModel(
 					description,
 					scope,
 					...(projectId ? { project_id: projectId } : {}),
+					...(agentConfig ? { agent_config: agentConfig } : {}),
 				}),
 			},
 		)
@@ -595,6 +616,45 @@ export function createChatroomModel(
 		)
 		await readJsonOrThrow<DeleteRoleResponse>(response)
 		roles = roles.filter((r) => r.id !== id)
+	}
+
+	// ── Agents ─────────────────────────────────────────────────────────────────
+
+	async function spawnProjectAgent(
+		projectId: string,
+		roleId: string,
+	): Promise<unknown> {
+		const response = await dependencies.fetchImpl(
+			`${dependencies.serverUrl}/projects/${encodeURIComponent(projectId)}/agents/spawn`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ role_id: roleId }),
+			},
+		)
+		return readJsonOrThrow<unknown>(response)
+	}
+
+	async function getProjectAgents(projectId: string): Promise<
+		Array<{
+			role_id: string
+			agent_name: string
+			runtime: string
+			status: string
+		}>
+	> {
+		const response = await dependencies.fetchImpl(
+			`${dependencies.serverUrl}/projects/${encodeURIComponent(projectId)}/agents`,
+		)
+		const data = await readJsonOrThrow<{
+			agents: Array<{
+				role_id: string
+				agent_name: string
+				runtime: string
+				status: string
+			}>
+		}>(response)
+		return data.agents
 	}
 
 	// ── Teams ──────────────────────────────────────────────────────────────────
@@ -887,6 +947,8 @@ export function createChatroomModel(
 		createRole,
 		updateRole,
 		deleteRole,
+		spawnProjectAgent,
+		getProjectAgents,
 		listTeams,
 		createTeam,
 		updateTeam,
@@ -974,6 +1036,8 @@ export const listRoles = chatroomModel.listRoles
 export const createRole = chatroomModel.createRole
 export const updateRole = chatroomModel.updateRole
 export const deleteRole = chatroomModel.deleteRole
+export const spawnProjectAgent = chatroomModel.spawnProjectAgent
+export const getProjectAgents = chatroomModel.getProjectAgents
 export const listTeams = chatroomModel.listTeams
 export const createTeam = chatroomModel.createTeam
 export const updateTeam = chatroomModel.updateTeam
