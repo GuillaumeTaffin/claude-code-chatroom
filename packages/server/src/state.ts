@@ -1514,6 +1514,7 @@ export function createProjectChatDependencies({
   runInventory,
   workspaceAllocationInventory,
   timelineInventory,
+  spawnManager,
 }: Partial<ProjectChatDependencies> = {}): ProjectChatDependencies {
   const resolvedTeamInventory =
     teamInventory ?? new InMemoryTeamInventory(projectInventory, roleInventory)
@@ -1537,6 +1538,7 @@ export function createProjectChatDependencies({
       workspaceAllocationInventory ??
       new InMemoryWorkspaceAllocationInventory(resolvedRunInventory),
     timelineInventory: resolvedTimelineInventory,
+    ...(spawnManager ? { spawnManager } : {}),
   }
 }
 
