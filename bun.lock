@@ -70,6 +70,7 @@
       "name": "@chatroom/server",
       "version": "0.0.1",
       "dependencies": {
+        "@anthropic-ai/claude-agent-sdk": "^0.2.97",
         "@chatroom/shared": "workspace:*",
         "@chatroom/spawner": "workspace:*",
         "@elysiajs/cors": "^1.4.1",

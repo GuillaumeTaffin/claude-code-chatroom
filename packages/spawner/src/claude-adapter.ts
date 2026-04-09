@@ -19,16 +19,8 @@ export interface ClaudeQueryHandle {
 
 export interface ClaudeAgentDependencies {
   query: (options: {
-    prompt: string
-    options?: {
-      systemPrompt?: string
-      model?: string
-      maxTurns?: number
-      mcpServers?: Record<string, unknown>
-      allowedTools?: string[]
-      permissionMode?: string
-      allowDangerouslySkipPermissions?: boolean
-    }
+    prompt: string | AsyncIterable<unknown>
+    options?: Record<string, unknown>
   }) => ClaudeQueryHandle
 }
 

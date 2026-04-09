@@ -1,7 +1,8 @@
+import { query } from '@anthropic-ai/claude-agent-sdk'
 import {
   createSpawnManager,
   createClaudeSessionFactory,
-  type ClaudeQueryHandle,
+  type ClaudeAgentDependencies,
 } from '@chatroom/spawner'
 import { createApp } from './app.js'
 import { createProjectChatDependencies } from './state.js'
@@ -9,18 +10,7 @@ import { createProjectChatDependencies } from './state.js'
 const PORT = Number(process.env.PORT) || 3000
 
 const claudeFactory = createClaudeSessionFactory({
-  query: (options) => {
-    // Stub: real SDK integration plugs in here
-    // Replace this body with: import('@anthropic-ai/claude-agent-sdk').then(sdk => sdk.query(options))
-    console.error(
-      '[spawner] Claude agent session started (stub)',
-      options.prompt.slice(0, 60),
-    )
-    return {
-      async streamInput() {},
-      async *[Symbol.asyncIterator]() {},
-    } as ClaudeQueryHandle
-  },
+  query: query as unknown as ClaudeAgentDependencies['query'],
 })
 
 const spawnManager = createSpawnManager({
