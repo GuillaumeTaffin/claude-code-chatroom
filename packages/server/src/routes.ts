@@ -465,6 +465,15 @@ export function handleCreateRun(
       mapCreateRunDtoToDomain(body),
     )
     dependencies.roomRegistry.getOrCreateRoom(run.channelId)
+
+    // Auto-spawn agents if spawn manager is configured
+    if (dependencies.spawnManager) {
+      const runDto = mapRunToDto(run)
+      void dependencies.spawnManager.spawnForRun(runDto).catch((e: unknown) => {
+        console.error(`[spawner] Failed to spawn agents for run ${run.id}:`, e)
+      })
+    }
+
     return { run: mapRunToDto(run) } satisfies CreateRunResponse
   } catch (err) {
     const message = (err as Error).message
@@ -521,7 +530,15 @@ export function handleAdvanceRun(
 
   try {
     const run = dependencies.runInventory.advancePhase(id)
-    return { run: mapRunToDto(run) } satisfies AdvanceRunResponse
+    const result = { run: mapRunToDto(run) } satisfies AdvanceRunResponse
+
+    if (run.status === 'completed' && dependencies.spawnManager) {
+      void dependencies.spawnManager.stopRun(id).catch((e: unknown) => {
+        console.error(`[spawner] Failed to stop agents for run ${id}:`, e)
+      })
+    }
+
+    return result
   } catch (err) {
     const message = (err as Error).message
     if (message.includes('was not found')) {
@@ -550,7 +567,15 @@ export function handleApproveRun(
       body.decision,
       body.reason,
     )
-    return { run: mapRunToDto(run) } satisfies ApproveRunResponse
+    const result = { run: mapRunToDto(run) } satisfies ApproveRunResponse
+
+    if (run.status === 'completed' && dependencies.spawnManager) {
+      void dependencies.spawnManager.stopRun(id).catch((e: unknown) => {
+        console.error(`[spawner] Failed to stop agents for run ${id}:`, e)
+      })
+    }
+
+    return result
   } catch (err) {
     const message = (err as Error).message
     if (message.includes('was not found')) {
@@ -560,6 +585,59 @@ export function handleApproveRun(
     set.status = 409
     return { error: message }
   }
+}
+
+// ── Agent spawn route handlers ────────────────────────────────────────────
+
+export function handleGetRunAgents(
+  dependencies: ProjectChatDependencies,
+  id: string,
+  set: { status?: number | string },
+) {
+  if (!dependencies.spawnManager) {
+    set.status = 501
+    return { error: 'Agent spawning not configured' }
+  }
+
+  const status = dependencies.spawnManager.getSpawnStatus(id)
+  if (!status) {
+    return { run_id: id, agents: [] }
+  }
+  return status
+}
+
+export async function handleSpawnRunAgents(
+  dependencies: ProjectChatDependencies,
+  id: string,
+  set: { status?: number | string },
+) {
+  if (!dependencies.spawnManager) {
+    set.status = 501
+    return { error: 'Agent spawning not configured' }
+  }
+
+  const run = dependencies.runInventory.getRunById(id)
+  if (!run) {
+    set.status = 404
+    return { error: `run "${id}" was not found` }
+  }
+
+  const runDto = mapRunToDto(run)
+  return dependencies.spawnManager.spawnForRun(runDto)
+}
+
+export async function handleStopRunAgents(
+  dependencies: ProjectChatDependencies,
+  id: string,
+  set: { status?: number | string },
+) {
+  if (!dependencies.spawnManager) {
+    set.status = 501
+    return { error: 'Agent spawning not configured' }
+  }
+
+  await dependencies.spawnManager.stopRun(id)
+  return { stopped: true }
 }
 
 // ── Workspace allocation route handlers ───────────────────────────────────
@@ -975,6 +1053,35 @@ export function createRouteHandlers(
           )
         },
       },
+      agents: {
+        get({
+          params,
+          set,
+        }: {
+          params: { id: string }
+          set: { status?: number | string }
+        }) {
+          return handleGetRunAgents(dependencies, params.id, set)
+        },
+        spawn({
+          params,
+          set,
+        }: {
+          params: { id: string }
+          set: { status?: number | string }
+        }) {
+          return handleSpawnRunAgents(dependencies, params.id, set)
+        },
+        stop({
+          params,
+          set,
+        }: {
+          params: { id: string }
+          set: { status?: number | string }
+        }) {
+          return handleStopRunAgents(dependencies, params.id, set)
+        },
+      },
     },
     workspaces: {
       delete({
@@ -1208,6 +1315,21 @@ export function createRoutes(
       }),
     })
     .delete('/workspaces/:id', handlers.workspaces.delete, {
+      params: t.Object({
+        id: t.String(),
+      }),
+    })
+    .get('/runs/:id/agents', handlers.runs.agents.get, {
+      params: t.Object({
+        id: t.String(),
+      }),
+    })
+    .post('/runs/:id/agents/spawn', handlers.runs.agents.spawn, {
+      params: t.Object({
+        id: t.String(),
+      }),
+    })
+    .post('/runs/:id/agents/stop', handlers.runs.agents.stop, {
       params: t.Object({
         id: t.String(),
       }),

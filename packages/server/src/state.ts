@@ -23,6 +23,7 @@ import type {
   WorkspaceAllocation as WorkspaceAllocationDto,
   WorkspaceType,
 } from '@chatroom/shared'
+import type { SpawnManager } from '@chatroom/spawner'
 
 const DEFAULT_CHANNEL_ID = 'general'
 
@@ -516,6 +517,7 @@ export interface ProjectChatDependencies {
   runInventory: RunInventory
   workspaceAllocationInventory: WorkspaceAllocationInventory
   timelineInventory: TimelineInventory
+  spawnManager?: SpawnManager
 }
 
 export function mapProjectRecordToDomain(
