@@ -1,4 +1,5 @@
 import type {
+  AgentRuntime,
   ApprovalRecord as ApprovalRecordDto,
   ApprovalStatus,
   Member,
@@ -11,17 +12,18 @@ import type {
   Role as RoleDto,
   RoleScope,
   Run as RunDto,
+  RunTeamSnapshot,
+  RunTeamSnapshotMember as RunTeamSnapshotMemberDto,
   RuntimeIdentity,
   RunStatus,
-  RunTeamSnapshot,
   Team as TeamDto,
-  TeamMember as TeamMemberDto,
   TimelineEvent as TimelineEventDto,
   TimelineEventType,
   Workspace as WorkspaceDto,
   WorkspaceAllocation as WorkspaceAllocationDto,
   WorkspaceType,
 } from '@chatroom/shared'
+import type { SpawnManager } from '@chatroom/spawner'
 
 const DEFAULT_CHANNEL_ID = 'general'
 
@@ -205,12 +207,25 @@ export interface RoomRegistry {
 
 // ── Role storage & domain types ─────────────────────────────────────────────
 
+export interface AgentConfigRecord {
+  runtime: string
+  system_prompt: string | null
+  model: string | null
+}
+
+export interface AgentConfigDetails {
+  runtime: AgentRuntime
+  systemPrompt: string | null
+  model: string | null
+}
+
 export interface RoleRecord {
   id: string
   name: string
   description: string
   scope: RoleScope
   project_id: string | null
+  agent_config: AgentConfigRecord | null
 }
 
 export interface RoleDetails {
@@ -219,6 +234,7 @@ export interface RoleDetails {
   description: string
   scope: RoleScope
   projectId: string | null
+  agentConfig: AgentConfigDetails | null
 }
 
 export interface CreateRoleInput {
@@ -226,11 +242,13 @@ export interface CreateRoleInput {
   description: string
   scope: RoleScope
   projectId?: string
+  agentConfig?: AgentConfigDetails
 }
 
 export interface UpdateRoleInput {
   name?: string
   description?: string
+  agentConfig?: AgentConfigDetails | null
 }
 
 export interface RoleFilter {
@@ -297,10 +315,17 @@ export interface TeamInventory {
 
 // ── Run storage & domain types ──────────────────────────────────────────────
 
+export interface RunTeamSnapshotMemberRecord {
+  role_id: string
+  role_name: string
+  role_description: string
+  agent_config: AgentConfigRecord | null
+}
+
 export interface RunTeamSnapshotRecord {
   team_id: string
   team_name: string
-  members: { role_id: string }[]
+  members: RunTeamSnapshotMemberRecord[]
 }
 
 export interface PhaseRecord {
@@ -333,10 +358,17 @@ export interface RunRecord {
   created_at: string
 }
 
+export interface RunTeamMemberDetails {
+  roleId: string
+  roleName: string
+  roleDescription: string
+  agentConfig: AgentConfigDetails | null
+}
+
 export interface RunTeamSnapshotDetails {
   teamId: string
   teamName: string
-  members: TeamMemberDetails[]
+  members: RunTeamMemberDetails[]
 }
 
 export interface PhaseDetails {
@@ -485,6 +517,7 @@ export interface ProjectChatDependencies {
   runInventory: RunInventory
   workspaceAllocationInventory: WorkspaceAllocationInventory
   timelineInventory: TimelineInventory
+  spawnManager?: SpawnManager
 }
 
 export function mapProjectRecordToDomain(
@@ -530,6 +563,28 @@ export function mapCreateProjectDtoToDomain(
 
 // ── Role mapping functions ──────────────────────────────────────────────────
 
+export function mapAgentConfigRecordToDomain(
+  record: AgentConfigRecord | null,
+): AgentConfigDetails | null {
+  if (!record) return null
+  return {
+    runtime: record.runtime as AgentRuntime,
+    systemPrompt: record.system_prompt,
+    model: record.model,
+  }
+}
+
+export function mapAgentConfigToRecord(
+  config: AgentConfigDetails | null,
+): AgentConfigRecord | null {
+  if (!config) return null
+  return {
+    runtime: config.runtime,
+    system_prompt: config.systemPrompt,
+    model: config.model,
+  }
+}
+
 export function mapRoleRecordToDomain(record: RoleRecord): RoleDetails {
   return {
     id: record.id,
@@ -537,6 +592,18 @@ export function mapRoleRecordToDomain(record: RoleRecord): RoleDetails {
     description: record.description,
     scope: record.scope,
     projectId: record.project_id,
+    agentConfig: mapAgentConfigRecordToDomain(record.agent_config),
+  }
+}
+
+export function mapAgentConfigToDto(
+  config: AgentConfigDetails | null,
+): RoleDto['agent_config'] {
+  if (!config) return null
+  return {
+    runtime: config.runtime,
+    system_prompt: config.systemPrompt,
+    model: config.model,
   }
 }
 
@@ -547,6 +614,7 @@ export function mapRoleToDto(role: RoleDetails): RoleDto {
     description: role.description,
     scope: role.scope,
     project_id: role.projectId,
+    agent_config: mapAgentConfigToDto(role.agentConfig),
   }
 }
 
@@ -555,22 +623,49 @@ export function mapCreateRoleDtoToDomain(input: {
   description: string
   scope: RoleScope
   project_id?: string
+  agent_config?: {
+    runtime: string
+    system_prompt: string | null
+    model: string | null
+  }
 }): CreateRoleInput {
   return {
     name: input.name,
     description: input.description,
     scope: input.scope,
     projectId: input.project_id,
+    ...(input.agent_config !== undefined && {
+      agentConfig: {
+        runtime: input.agent_config.runtime as AgentRuntime,
+        systemPrompt: input.agent_config.system_prompt,
+        model: input.agent_config.model,
+      },
+    }),
   }
 }
 
 export function mapUpdateRoleDtoToDomain(input: {
   name?: string
   description?: string
+  agent_config?: {
+    runtime: string
+    system_prompt: string | null
+    model: string | null
+  } | null
 }): UpdateRoleInput {
   return {
     ...(input.name !== undefined && { name: input.name }),
     ...(input.description !== undefined && { description: input.description }),
+    ...(input.agent_config !== undefined && {
+      agentConfig:
+        input.agent_config === null
+          ? null
+          : {
+              runtime: input.agent_config.runtime as AgentRuntime,
+              systemPrompt: input.agent_config.system_prompt,
+              model: input.agent_config.model,
+            },
+    }),
   }
 }
 
@@ -638,7 +733,12 @@ export function mapRunTeamSnapshotRecordToDomain(
   return {
     teamId: record.team_id,
     teamName: record.team_name,
-    members: record.members.map((m) => ({ roleId: m.role_id })),
+    members: record.members.map((m) => ({
+      roleId: m.role_id,
+      roleName: m.role_name,
+      roleDescription: m.role_description,
+      agentConfig: mapAgentConfigRecordToDomain(m.agent_config),
+    })),
   }
 }
 
@@ -687,7 +787,12 @@ export function mapRunTeamSnapshotToDto(
     team_id: snapshot.teamId,
     team_name: snapshot.teamName,
     members: snapshot.members.map(
-      (m): TeamMemberDto => ({ role_id: m.roleId }),
+      (m): RunTeamSnapshotMemberDto => ({
+        role_id: m.roleId,
+        role_name: m.roleName,
+        role_description: m.roleDescription,
+        agent_config: mapAgentConfigToDto(m.agentConfig),
+      }),
     ),
   }
 }
@@ -886,6 +991,9 @@ export class InMemoryRoleInventory implements RoleInventory {
       description: input.description,
       scope: input.scope,
       project_id: input.scope === 'project' ? (input.projectId ?? null) : null,
+      agent_config: input.agentConfig
+        ? mapAgentConfigToRecord(input.agentConfig)
+        : null,
     }
 
     this.records.set(id, record)
@@ -917,6 +1025,9 @@ export class InMemoryRoleInventory implements RoleInventory {
 
     if (input.name !== undefined) record.name = input.name
     if (input.description !== undefined) record.description = input.description
+    if (input.agentConfig !== undefined) {
+      record.agent_config = mapAgentConfigToRecord(input.agentConfig)
+    }
 
     return mapRoleRecordToDomain(record)
   }
@@ -1006,6 +1117,7 @@ export class InMemoryRunInventory implements RunInventory {
     private readonly projectInventory: ProjectInventory,
     private readonly teamInventory: TeamInventory,
     private readonly timelineInventory?: TimelineInventory,
+    private readonly roleInventory?: RoleInventory,
   ) {}
 
   createRun(input: CreateRunInput): RunDetails {
@@ -1060,6 +1172,20 @@ export class InMemoryRunInventory implements RunInventory {
       completed_at: null,
     }))
 
+    const snapshotMembers: RunTeamSnapshotMemberRecord[] = team.members.map(
+      (m) => {
+        const role = this.roleInventory?.getRoleById(m.roleId)
+        return {
+          role_id: m.roleId,
+          role_name: role?.name ?? '',
+          role_description: role?.description ?? '',
+          agent_config: role?.agentConfig
+            ? mapAgentConfigToRecord(role.agentConfig)
+            : null,
+        }
+      },
+    )
+
     const record: RunRecord = {
       id,
       name: input.name,
@@ -1067,7 +1193,7 @@ export class InMemoryRunInventory implements RunInventory {
       team_snapshot: {
         team_id: team.id,
         team_name: team.name,
-        members: team.members.map((m) => ({ role_id: m.roleId })),
+        members: snapshotMembers,
       },
       channel_id: channelId,
       status: 'active',
@@ -1388,6 +1514,7 @@ export function createProjectChatDependencies({
   runInventory,
   workspaceAllocationInventory,
   timelineInventory,
+  spawnManager,
 }: Partial<ProjectChatDependencies> = {}): ProjectChatDependencies {
   const resolvedTeamInventory =
     teamInventory ?? new InMemoryTeamInventory(projectInventory, roleInventory)
@@ -1399,6 +1526,7 @@ export function createProjectChatDependencies({
       projectInventory,
       resolvedTeamInventory,
       resolvedTimelineInventory,
+      roleInventory,
     )
   return {
     projectInventory,
@@ -1410,6 +1538,7 @@ export function createProjectChatDependencies({
       workspaceAllocationInventory ??
       new InMemoryWorkspaceAllocationInventory(resolvedRunInventory),
     timelineInventory: resolvedTimelineInventory,
+    spawnManager,
   }
 }
 

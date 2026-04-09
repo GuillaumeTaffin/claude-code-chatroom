@@ -215,6 +215,17 @@ export function handleCreateRole(
     return { error: 'project_id must not be provided when scope is "user"' }
   }
 
+  if (body.agent_config) {
+    if (
+      !body.agent_config.runtime ||
+      (body.agent_config.runtime !== 'claude' &&
+        body.agent_config.runtime !== 'copilot')
+    ) {
+      set.status = 400
+      return { error: 'agent_config.runtime must be "claude" or "copilot"' }
+    }
+  }
+
   if (body.scope === 'project') {
     const project = dependencies.projectInventory.getProjectById(
       body.project_id!,
@@ -265,6 +276,17 @@ export function handleUpdateRole(
   set: { status?: number | string },
   dependencies: ProjectChatDependencies = defaultProjectChatDependencies,
 ) {
+  if (
+    body.agent_config !== undefined &&
+    body.agent_config !== null &&
+    (!body.agent_config.runtime ||
+      (body.agent_config.runtime !== 'claude' &&
+        body.agent_config.runtime !== 'copilot'))
+  ) {
+    set.status = 400
+    return { error: 'agent_config.runtime must be "claude" or "copilot"' }
+  }
+
   const role = dependencies.roleInventory.updateRole(
     id,
     mapUpdateRoleDtoToDomain(body),
@@ -443,6 +465,15 @@ export function handleCreateRun(
       mapCreateRunDtoToDomain(body),
     )
     dependencies.roomRegistry.getOrCreateRoom(run.channelId)
+
+    // Auto-spawn agents if spawn manager is configured
+    if (dependencies.spawnManager) {
+      const runDto = mapRunToDto(run)
+      void dependencies.spawnManager.spawnForRun(runDto).catch((e: unknown) => {
+        console.error(`[spawner] Failed to spawn agents for run ${run.id}:`, e)
+      })
+    }
+
     return { run: mapRunToDto(run) } satisfies CreateRunResponse
   } catch (err) {
     const message = (err as Error).message
@@ -499,7 +530,15 @@ export function handleAdvanceRun(
 
   try {
     const run = dependencies.runInventory.advancePhase(id)
-    return { run: mapRunToDto(run) } satisfies AdvanceRunResponse
+    const result = { run: mapRunToDto(run) } satisfies AdvanceRunResponse
+
+    if (run.status === 'completed' && dependencies.spawnManager) {
+      void dependencies.spawnManager.stopRun(id).catch((e: unknown) => {
+        console.error(`[spawner] Failed to stop agents for run ${id}:`, e)
+      })
+    }
+
+    return result
   } catch (err) {
     const message = (err as Error).message
     if (message.includes('was not found')) {
@@ -528,7 +567,15 @@ export function handleApproveRun(
       body.decision,
       body.reason,
     )
-    return { run: mapRunToDto(run) } satisfies ApproveRunResponse
+    const result = { run: mapRunToDto(run) } satisfies ApproveRunResponse
+
+    if (run.status === 'completed' && dependencies.spawnManager) {
+      void dependencies.spawnManager.stopRun(id).catch((e: unknown) => {
+        console.error(`[spawner] Failed to stop agents for run ${id}:`, e)
+      })
+    }
+
+    return result
   } catch (err) {
     const message = (err as Error).message
     if (message.includes('was not found')) {
@@ -538,6 +585,114 @@ export function handleApproveRun(
     set.status = 409
     return { error: message }
   }
+}
+
+// ── Agent spawn route handlers ────────────────────────────────────────────
+
+export function handleGetRunAgents(
+  dependencies: ProjectChatDependencies,
+  id: string,
+  set: { status?: number | string },
+) {
+  if (!dependencies.spawnManager) {
+    set.status = 501
+    return { error: 'Agent spawning not configured' }
+  }
+
+  const status = dependencies.spawnManager.getSpawnStatus(id)
+  if (!status) {
+    return { run_id: id, agents: [] }
+  }
+  return status
+}
+
+export async function handleSpawnRunAgents(
+  dependencies: ProjectChatDependencies,
+  id: string,
+  set: { status?: number | string },
+) {
+  if (!dependencies.spawnManager) {
+    set.status = 501
+    return { error: 'Agent spawning not configured' }
+  }
+
+  const run = dependencies.runInventory.getRunById(id)
+  if (!run) {
+    set.status = 404
+    return { error: `run "${id}" was not found` }
+  }
+
+  const runDto = mapRunToDto(run)
+  return dependencies.spawnManager.spawnForRun(runDto)
+}
+
+export async function handleStopRunAgents(
+  dependencies: ProjectChatDependencies,
+  id: string,
+  set: { status?: number | string },
+) {
+  if (!dependencies.spawnManager) {
+    set.status = 501
+    return { error: 'Agent spawning not configured' }
+  }
+
+  await dependencies.spawnManager.stopRun(id)
+  return { stopped: true }
+}
+
+// ── Project agent spawn route handlers ───────────────────────────────────
+
+export async function handleSpawnProjectAgent(
+  dependencies: ProjectChatDependencies,
+  projectId: string,
+  body: { role_id: string },
+  set: { status?: number | string },
+) {
+  if (!dependencies.spawnManager) {
+    set.status = 501
+    return { error: 'Agent spawning not configured' }
+  }
+
+  const project = dependencies.projectInventory.getProjectById(projectId)
+  if (!project) {
+    set.status = 404
+    return { error: `project "${projectId}" was not found` }
+  }
+
+  const role = dependencies.roleInventory.getRoleById(body.role_id)
+  if (!role) {
+    set.status = 404
+    return { error: `role "${body.role_id}" was not found` }
+  }
+
+  if (!role.agentConfig) {
+    set.status = 400
+    return { error: 'Role does not have agent configuration' }
+  }
+
+  return dependencies.spawnManager.spawnForProject(projectId, {
+    role_id: role.id,
+    role_name: role.name,
+    role_description: role.description,
+    agent_config: {
+      runtime: role.agentConfig.runtime,
+      system_prompt: role.agentConfig.systemPrompt,
+      model: role.agentConfig.model,
+    },
+  })
+}
+
+export function handleGetProjectAgents(
+  dependencies: ProjectChatDependencies,
+  projectId: string,
+  set: { status?: number | string },
+) {
+  if (!dependencies.spawnManager) {
+    set.status = 501
+    return { error: 'Agent spawning not configured' }
+  }
+
+  return { agents: dependencies.spawnManager.getProjectAgents(projectId) }
 }
 
 // ── Workspace allocation route handlers ───────────────────────────────────
@@ -688,6 +843,28 @@ export function createRouteHandlers(
       list() {
         return handleProjects(dependencies)
       },
+      agents: {
+        spawn({
+          params,
+          body,
+          set,
+        }: {
+          params: { id: string }
+          body: { role_id: string }
+          set: { status?: number | string }
+        }) {
+          return handleSpawnProjectAgent(dependencies, params.id, body, set)
+        },
+        get({
+          params,
+          set,
+        }: {
+          params: { id: string }
+          set: { status?: number | string }
+        }) {
+          return handleGetProjectAgents(dependencies, params.id, set)
+        },
+      },
     },
     connect({
       body,
@@ -731,6 +908,11 @@ export function createRouteHandlers(
           description: string
           scope: string
           project_id?: string
+          agent_config?: {
+            runtime: string
+            system_prompt: string | null
+            model: string | null
+          }
         }
         set: { status?: number | string }
       }) {
@@ -754,10 +936,23 @@ export function createRouteHandlers(
         set,
       }: {
         params: { id: string }
-        body: UpdateRoleRequest
+        body: {
+          name?: string
+          description?: string
+          agent_config?: {
+            runtime: string
+            system_prompt: string | null
+            model: string | null
+          } | null
+        }
         set: { status?: number | string }
       }) {
-        return handleUpdateRole(params.id, body, set, dependencies)
+        return handleUpdateRole(
+          params.id,
+          body as UpdateRoleRequest,
+          set,
+          dependencies,
+        )
       },
       delete({
         params,
@@ -935,6 +1130,35 @@ export function createRouteHandlers(
           )
         },
       },
+      agents: {
+        get({
+          params,
+          set,
+        }: {
+          params: { id: string }
+          set: { status?: number | string }
+        }) {
+          return handleGetRunAgents(dependencies, params.id, set)
+        },
+        spawn({
+          params,
+          set,
+        }: {
+          params: { id: string }
+          set: { status?: number | string }
+        }) {
+          return handleSpawnRunAgents(dependencies, params.id, set)
+        },
+        stop({
+          params,
+          set,
+        }: {
+          params: { id: string }
+          set: { status?: number | string }
+        }) {
+          return handleStopRunAgents(dependencies, params.id, set)
+        },
+      },
     },
     workspaces: {
       delete({
@@ -997,6 +1221,13 @@ export function createRoutes(
         description: t.String(),
         scope: t.String(),
         project_id: t.Optional(t.String()),
+        agent_config: t.Optional(
+          t.Object({
+            runtime: t.String(),
+            system_prompt: t.Union([t.String(), t.Null()]),
+            model: t.Union([t.String(), t.Null()]),
+          }),
+        ),
       }),
     })
     .get('/roles', handlers.roles.list, {
@@ -1017,6 +1248,16 @@ export function createRoutes(
       body: t.Object({
         name: t.Optional(t.String()),
         description: t.Optional(t.String()),
+        agent_config: t.Optional(
+          t.Union([
+            t.Object({
+              runtime: t.String(),
+              system_prompt: t.Union([t.String(), t.Null()]),
+              model: t.Union([t.String(), t.Null()]),
+            }),
+            t.Null(),
+          ]),
+        ),
       }),
     })
     .delete('/roles/:id', handlers.roles.delete, {
@@ -1151,6 +1392,34 @@ export function createRoutes(
       }),
     })
     .delete('/workspaces/:id', handlers.workspaces.delete, {
+      params: t.Object({
+        id: t.String(),
+      }),
+    })
+    .get('/runs/:id/agents', handlers.runs.agents.get, {
+      params: t.Object({
+        id: t.String(),
+      }),
+    })
+    .post('/runs/:id/agents/spawn', handlers.runs.agents.spawn, {
+      params: t.Object({
+        id: t.String(),
+      }),
+    })
+    .post('/runs/:id/agents/stop', handlers.runs.agents.stop, {
+      params: t.Object({
+        id: t.String(),
+      }),
+    })
+    .post('/projects/:id/agents/spawn', handlers.projects.agents.spawn, {
+      params: t.Object({
+        id: t.String(),
+      }),
+      body: t.Object({
+        role_id: t.String(),
+      }),
+    })
+    .get('/projects/:id/agents', handlers.projects.agents.get, {
       params: t.Object({
         id: t.String(),
       }),

@@ -46,6 +46,8 @@
 		advanceRun,
 		approveRun,
 		addReviewFeedback,
+		spawnProjectAgent,
+		getProjectAgents,
 	} from '$lib/chatroom.svelte.js'
 	import { getMemberInitial, getNameColor } from '$lib/chatroom-ui.js'
 	import { cn } from '$lib/utils.js'
@@ -66,6 +68,15 @@
 	let newRoleName = $state('')
 	let newRoleDescription = $state('')
 	let newRoleScope = $state<'user' | 'project'>('project')
+	let newRoleIsAgent = $state(true)
+	let newRoleRuntime = $state<'claude' | 'copilot'>('claude')
+	let newRoleModel = $state('')
+	let newRoleSystemPrompt = $state('')
+
+	// Spawn dialog
+	let showSpawnDialog = $state(false)
+	let selectedSpawnRoleId = $state('')
+	let spawning = $state(false)
 
 	// Team dialog
 	let showTeamDialog = $state(false)
@@ -106,6 +117,9 @@
 				r.scope === 'user' ||
 				(r.scope === 'project' && r.project_id === selectedProject?.id),
 		),
+	)
+	const agentRoles = $derived(
+		projectRoles.filter((r) => r.agent_config !== null),
 	)
 
 	// ── Lifecycle ────────────────────────────────────────────────────
@@ -218,12 +232,39 @@
 				newRoleDescription.trim(),
 				newRoleScope,
 				newRoleScope === 'project' ? selectedProject?.id : undefined,
+				newRoleIsAgent
+					? {
+							runtime: newRoleRuntime,
+							system_prompt: newRoleSystemPrompt.trim() || null,
+							model: newRoleModel.trim() || null,
+						}
+					: undefined,
 			)
 			newRoleName = ''
 			newRoleDescription = ''
+			newRoleIsAgent = true
+			newRoleRuntime = 'claude'
+			newRoleModel = ''
+			newRoleSystemPrompt = ''
 			showRoleDialog = false
 		} catch (err) {
 			error = (err as Error).message
+		}
+	}
+
+	async function handleSpawnAgent(event: SubmitEvent) {
+		event.preventDefault()
+		if (!selectedProject || !selectedSpawnRoleId) return
+		spawning = true
+		error = ''
+		try {
+			await spawnProjectAgent(selectedProject.id, selectedSpawnRoleId)
+			selectedSpawnRoleId = ''
+			showSpawnDialog = false
+		} catch (err) {
+			error = (err as Error).message
+		} finally {
+			spawning = false
 		}
 	}
 
@@ -1134,6 +1175,16 @@
 									>
 										Disconnect
 									</Button>
+									{#if agentRoles.length > 0}
+										<Button
+											variant="outline"
+											size="sm"
+											class="mt-2 w-full border-violet-500/30 text-xs text-violet-400 hover:bg-violet-500/10"
+											onclick={() => (showSpawnDialog = true)}
+										>
+											Spawn Agent
+										</Button>
+									{/if}
 								</div>
 							</aside>
 						</div>
@@ -1184,6 +1235,16 @@
 														class="text-[10px]"
 													>
 														{role.scope}
+													</Badge>
+													<Badge
+														variant="outline"
+														class="text-[10px] {role.agent_config
+															? 'border-violet-500/30 bg-violet-500/10 text-violet-400'
+															: 'border-zinc-500/30 text-zinc-500'}"
+													>
+														{role.agent_config
+															? role.agent_config.runtime
+															: 'human'}
 													</Badge>
 												</div>
 												<p class="text-muted-foreground mt-0.5 text-xs">
@@ -1376,6 +1437,29 @@
 					/>
 				</div>
 				<div class="space-y-1.5">
+					<Label class="text-xs">Type</Label>
+					<div class="flex gap-2">
+						<Button
+							type="button"
+							variant={newRoleIsAgent ? 'default' : 'outline'}
+							size="sm"
+							class="h-8 flex-1 text-xs"
+							onclick={() => (newRoleIsAgent = true)}
+						>
+							Agent
+						</Button>
+						<Button
+							type="button"
+							variant={!newRoleIsAgent ? 'default' : 'outline'}
+							size="sm"
+							class="h-8 flex-1 text-xs"
+							onclick={() => (newRoleIsAgent = false)}
+						>
+							Human
+						</Button>
+					</div>
+				</div>
+				<div class="space-y-1.5">
 					<Label class="text-xs">Scope</Label>
 					<div class="flex gap-2">
 						<Button
@@ -1398,6 +1482,51 @@
 						</Button>
 					</div>
 				</div>
+				{#if newRoleIsAgent}
+					<div class="space-y-1.5">
+						<Label class="text-xs">Runtime</Label>
+						<div class="flex gap-2">
+							<Button
+								type="button"
+								variant={newRoleRuntime === 'claude' ? 'default' : 'outline'}
+								size="sm"
+								class="h-8 flex-1 text-xs"
+								onclick={() => (newRoleRuntime = 'claude')}
+							>
+								Claude
+							</Button>
+							<Button
+								type="button"
+								variant={newRoleRuntime === 'copilot' ? 'default' : 'outline'}
+								size="sm"
+								class="h-8 flex-1 text-xs"
+								onclick={() => (newRoleRuntime = 'copilot')}
+							>
+								Copilot
+							</Button>
+						</div>
+					</div>
+					<div class="space-y-1.5">
+						<Label for="role-model" class="text-xs">Model (optional)</Label>
+						<Input
+							id="role-model"
+							bind:value={newRoleModel}
+							placeholder="e.g. opus, sonnet"
+							class="h-9 text-sm"
+						/>
+					</div>
+					<div class="space-y-1.5">
+						<Label for="role-system-prompt" class="text-xs"
+							>System Prompt (optional)</Label
+						>
+						<Textarea
+							id="role-system-prompt"
+							bind:value={newRoleSystemPrompt}
+							placeholder="Custom instructions for the agent..."
+							class="min-h-[60px] text-sm"
+						/>
+					</div>
+				{/if}
 				<Dialog.Footer>
 					<Button type="submit" size="sm" class="text-xs">Create Role</Button>
 				</Dialog.Footer>
@@ -1542,6 +1671,75 @@
 						disabled={!selectedTeamId}
 					>
 						Create Run
+					</Button>
+				</Dialog.Footer>
+			</form>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<!-- Spawn Agent Dialog -->
+	<Dialog.Root bind:open={showSpawnDialog}>
+		<Dialog.Content class="border-border/50 bg-card sm:max-w-md">
+			<Dialog.Header>
+				<Dialog.Title>Spawn Agent</Dialog.Title>
+				<Dialog.Description class="text-xs">
+					Select an agent role to spawn into the project chat.
+				</Dialog.Description>
+			</Dialog.Header>
+			<form onsubmit={handleSpawnAgent} class="space-y-3">
+				<div class="space-y-1.5">
+					<Label class="text-xs">Agent Role</Label>
+					{#if agentRoles.length === 0}
+						<p class="text-muted-foreground text-xs">
+							No agent roles available. Create a role with agent configuration
+							first.
+						</p>
+					{:else}
+						<div class="max-h-48 space-y-1 overflow-y-auto">
+							{#each agentRoles as role (role.id)}
+								<button
+									type="button"
+									class="border-border/50 hover:bg-accent/50 flex w-full items-center gap-2 rounded-md border p-2 text-left transition {selectedSpawnRoleId ===
+									role.id
+										? 'border-violet-500/50 bg-violet-500/10'
+										: ''}"
+									onclick={() => (selectedSpawnRoleId = role.id)}
+								>
+									<span
+										class="flex h-4 w-4 items-center justify-center rounded-full border text-[10px] {selectedSpawnRoleId ===
+										role.id
+											? 'border-violet-500 bg-violet-500 text-white'
+											: 'border-zinc-600'}"
+									>
+										{selectedSpawnRoleId === role.id ? '●' : ''}
+									</span>
+									<div class="min-w-0 flex-1">
+										<div class="flex items-center gap-1.5">
+											<span class="text-xs font-medium">{role.name}</span>
+											<Badge
+												variant="outline"
+												class="border-violet-500/30 bg-violet-500/10 text-[9px] text-violet-400"
+											>
+												{role.agent_config?.runtime}
+											</Badge>
+										</div>
+										<p class="text-muted-foreground text-[10px]">
+											{role.description}
+										</p>
+									</div>
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+				<Dialog.Footer>
+					<Button
+						type="submit"
+						size="sm"
+						class="text-xs"
+						disabled={!selectedSpawnRoleId || spawning}
+					>
+						{spawning ? 'Spawning...' : 'Spawn Agent'}
 					</Button>
 				</Dialog.Footer>
 			</form>

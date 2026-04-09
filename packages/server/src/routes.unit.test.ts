@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createRouteHandlers,
   handleAdvanceRun,
@@ -15,6 +15,7 @@ import {
   handleDeleteWorkspaceAllocation,
   handleGetPlaybook,
   handleGetRole,
+  handleGetRunAgents,
   handleGetRun,
   handleGetTeam,
   handleGetTimeline,
@@ -25,6 +26,10 @@ import {
   handleListWorkspaceAllocations,
   handleMembers,
   handleProjects,
+  handleSpawnRunAgents,
+  handleSpawnProjectAgent,
+  handleGetProjectAgents,
+  handleStopRunAgents,
   handleUpdateRole,
   handleUpdateTeam,
   routeHandlers,
@@ -35,6 +40,8 @@ import {
   createProjectChatDependencies,
   resetState,
 } from './state.js'
+import type { SpawnManager } from '@chatroom/spawner'
+import type { Run } from '@chatroom/shared'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -592,6 +599,220 @@ describe('role route handlers', () => {
 
     expect(set.status).toBe(404)
     expect(result).toEqual({ error: 'role "nonexistent" was not found' })
+  })
+
+  it('creates a role with agent_config', () => {
+    const set: { status?: number } = {}
+
+    const result = handleCreateRole(
+      {
+        name: 'Claude Dev',
+        description: 'AI developer',
+        scope: 'user',
+        agent_config: {
+          runtime: 'claude',
+          system_prompt: 'You write code',
+          model: 'opus',
+        },
+      },
+      set,
+    ) as {
+      role: {
+        id: string
+        name: string
+        agent_config: {
+          runtime: string
+          system_prompt: string | null
+          model: string | null
+        } | null
+      }
+    }
+
+    expect(set.status).toBeUndefined()
+    expect(result.role.id).toMatch(UUID)
+    expect(result.role.name).toBe('Claude Dev')
+    expect(result.role.agent_config).toEqual({
+      runtime: 'claude',
+      system_prompt: 'You write code',
+      model: 'opus',
+    })
+  })
+
+  it('creates a role without agent_config (defaults to null)', () => {
+    const set: { status?: number } = {}
+
+    const result = handleCreateRole(
+      {
+        name: 'Human',
+        description: 'A human role',
+        scope: 'user',
+      },
+      set,
+    ) as {
+      role: {
+        agent_config: null
+      }
+    }
+
+    expect(set.status).toBeUndefined()
+    expect(result.role.agent_config).toBeNull()
+  })
+
+  it('rejects role creation with invalid runtime', () => {
+    const set: { status?: number } = {}
+
+    const result = handleCreateRole(
+      {
+        name: 'Bad Agent',
+        description: 'Bad runtime',
+        scope: 'user',
+        agent_config: {
+          runtime: 'invalid' as 'claude',
+          system_prompt: null,
+          model: null,
+        },
+      },
+      set,
+    )
+
+    expect(set.status).toBe(400)
+    expect(result).toEqual({
+      error: 'agent_config.runtime must be "claude" or "copilot"',
+    })
+  })
+
+  it('rejects role creation with empty runtime', () => {
+    const set: { status?: number } = {}
+
+    const result = handleCreateRole(
+      {
+        name: 'Bad Agent',
+        description: 'Empty runtime',
+        scope: 'user',
+        agent_config: {
+          runtime: '' as 'claude',
+          system_prompt: null,
+          model: null,
+        },
+      },
+      set,
+    )
+
+    expect(set.status).toBe(400)
+    expect(result).toEqual({
+      error: 'agent_config.runtime must be "claude" or "copilot"',
+    })
+  })
+
+  it('updates a role with agent_config', () => {
+    const created = handleCreateRole(
+      { name: 'Human', description: 'A human', scope: 'user' },
+      {},
+    ) as { role: { id: string } }
+    const set: { status?: number } = {}
+
+    const result = handleUpdateRole(
+      created.role.id,
+      {
+        agent_config: {
+          runtime: 'copilot',
+          system_prompt: null,
+          model: 'gpt-4',
+        },
+      },
+      set,
+    ) as {
+      role: {
+        agent_config: {
+          runtime: string
+          system_prompt: string | null
+          model: string | null
+        } | null
+      }
+    }
+
+    expect(set.status).toBeUndefined()
+    expect(result.role.agent_config).toEqual({
+      runtime: 'copilot',
+      system_prompt: null,
+      model: 'gpt-4',
+    })
+  })
+
+  it('clears agent_config with null', () => {
+    const created = handleCreateRole(
+      {
+        name: 'Agent',
+        description: 'An agent',
+        scope: 'user',
+        agent_config: {
+          runtime: 'claude',
+          system_prompt: null,
+          model: null,
+        },
+      },
+      {},
+    ) as { role: { id: string } }
+    const set: { status?: number } = {}
+
+    const result = handleUpdateRole(
+      created.role.id,
+      { agent_config: null },
+      set,
+    ) as { role: { agent_config: null } }
+
+    expect(set.status).toBeUndefined()
+    expect(result.role.agent_config).toBeNull()
+  })
+
+  it('rejects update with invalid runtime', () => {
+    const created = handleCreateRole(
+      { name: 'Agent', description: 'An agent', scope: 'user' },
+      {},
+    ) as { role: { id: string } }
+    const set: { status?: number } = {}
+
+    const result = handleUpdateRole(
+      created.role.id,
+      {
+        agent_config: {
+          runtime: 'bad' as 'claude',
+          system_prompt: null,
+          model: null,
+        },
+      },
+      set,
+    )
+
+    expect(set.status).toBe(400)
+    expect(result).toEqual({
+      error: 'agent_config.runtime must be "claude" or "copilot"',
+    })
+  })
+
+  it('rejects update with empty runtime', () => {
+    const created = handleCreateRole(
+      { name: 'Agent', description: 'An agent', scope: 'user' },
+      {},
+    ) as { role: { id: string } }
+    const set: { status?: number } = {}
+
+    const result = handleUpdateRole(
+      created.role.id,
+      {
+        agent_config: {
+          runtime: '' as 'claude',
+          system_prompt: null,
+          model: null,
+        },
+      },
+      set,
+    )
+
+    expect(set.status).toBe(400)
+    expect(result).toEqual({
+      error: 'agent_config.runtime must be "claude" or "copilot"',
+    })
   })
 
   it('exposes role Elysia route adapters that delegate to handlers', () => {
@@ -2728,5 +2949,795 @@ describe('run creation with playbook_id via route handler', () => {
     expect(result).toEqual({
       error: 'playbook "nonexistent" was not found',
     })
+  })
+})
+
+// ── Agent spawn route handler tests ────────────────────────────────────────
+
+function createMockSpawnManager(
+  overrides: Partial<SpawnManager> = {},
+): SpawnManager {
+  return {
+    spawnForRun: vi.fn().mockResolvedValue({ run_id: 'r1', agents: [] }),
+    getSpawnStatus: vi.fn().mockReturnValue(undefined),
+    stopRun: vi.fn().mockResolvedValue(undefined),
+    stopAgent: vi.fn().mockResolvedValue(undefined),
+    spawnForProject: vi.fn().mockResolvedValue({
+      role_id: 'r1',
+      agent_name: 'agent',
+      runtime: 'claude',
+      status: 'starting',
+      started_at: '2026-01-01T00:00:00.000Z',
+    }),
+    getProjectAgents: vi.fn().mockReturnValue([]),
+    ...overrides,
+  }
+}
+
+describe('handleGetRunAgents', () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  it('returns 501 when no spawnManager is configured', () => {
+    const deps = createProjectChatDependencies()
+    const set: { status?: number | string } = {}
+
+    const result = handleGetRunAgents(deps, 'run-1', set)
+
+    expect(set.status).toBe(501)
+    expect(result).toEqual({ error: 'Agent spawning not configured' })
+  })
+
+  it('returns empty agents array when spawnManager has no status for the run', () => {
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager()
+    const set: { status?: number | string } = {}
+
+    const result = handleGetRunAgents(deps, 'unknown-run', set)
+
+    expect(set.status).toBeUndefined()
+    expect(result).toEqual({ run_id: 'unknown-run', agents: [] })
+  })
+
+  it('returns spawn status when available', () => {
+    const spawnStatus = {
+      run_id: 'run-1',
+      agents: [
+        {
+          role_id: 'role-1',
+          agent_name: 'architect',
+          runtime: 'claude' as const,
+          status: 'running' as const,
+          started_at: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    }
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({
+      getSpawnStatus: vi.fn().mockReturnValue(spawnStatus),
+    })
+    const set: { status?: number | string } = {}
+
+    const result = handleGetRunAgents(deps, 'run-1', set)
+
+    expect(set.status).toBeUndefined()
+    expect(result).toEqual(spawnStatus)
+  })
+})
+
+describe('handleSpawnRunAgents', () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  it('returns 501 when no spawnManager is configured', async () => {
+    const deps = createProjectChatDependencies()
+    const set: { status?: number | string } = {}
+
+    const result = await handleSpawnRunAgents(deps, 'run-1', set)
+
+    expect(set.status).toBe(501)
+    expect(result).toEqual({ error: 'Agent spawning not configured' })
+  })
+
+  it('returns 404 when run does not exist', async () => {
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager()
+    const set: { status?: number | string } = {}
+
+    const result = await handleSpawnRunAgents(deps, 'nonexistent', set)
+
+    expect(set.status).toBe(404)
+    expect(result).toEqual({ error: 'run "nonexistent" was not found' })
+  })
+
+  it('spawns agents for an existing run', async () => {
+    const deps = createProjectChatDependencies()
+    const project = createProject({ name: 'Test', root_path: '/test' }, deps)
+    handleCreateRole(
+      { name: 'Dev', description: 'Developer', scope: 'user' },
+      {},
+      deps,
+    )
+    const roles = (handleListRoles({}, deps) as { roles: { id: string }[] })
+      .roles
+    const teamResult = handleCreateTeam(
+      {
+        name: 'Team',
+        project_id: project.id,
+        members: [{ role_id: roles[0].id }],
+      },
+      {},
+      deps,
+    ) as { team: { id: string } }
+    const runResult = handleCreateRun(
+      {
+        name: 'Sprint',
+        project_id: project.id,
+        team_id: teamResult.team.id,
+      },
+      {},
+      deps,
+    ) as { run: Run }
+
+    const spawnResult = {
+      run_id: runResult.run.id,
+      agents: [],
+    }
+    const spawnForRun = vi.fn().mockResolvedValue(spawnResult)
+    deps.spawnManager = createMockSpawnManager({ spawnForRun })
+    const set: { status?: number | string } = {}
+
+    const result = await handleSpawnRunAgents(deps, runResult.run.id, set)
+
+    expect(set.status).toBeUndefined()
+    expect(spawnForRun).toHaveBeenCalledOnce()
+    expect(spawnForRun.mock.calls[0][0].id).toBe(runResult.run.id)
+    expect(result).toEqual(spawnResult)
+  })
+})
+
+describe('handleStopRunAgents', () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  it('returns 501 when no spawnManager is configured', async () => {
+    const deps = createProjectChatDependencies()
+    const set: { status?: number | string } = {}
+
+    const result = await handleStopRunAgents(deps, 'run-1', set)
+
+    expect(set.status).toBe(501)
+    expect(result).toEqual({ error: 'Agent spawning not configured' })
+  })
+
+  it('calls spawnManager.stopRun and returns stopped: true', async () => {
+    const stopRun = vi.fn().mockResolvedValue(undefined)
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({ stopRun })
+    const set: { status?: number | string } = {}
+
+    const result = await handleStopRunAgents(deps, 'run-1', set)
+
+    expect(set.status).toBeUndefined()
+    expect(stopRun).toHaveBeenCalledWith('run-1')
+    expect(result).toEqual({ stopped: true })
+  })
+})
+
+describe('auto-spawn on run creation', () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  function seedWithDeps(
+    deps: ReturnType<typeof createProjectChatDependencies>,
+  ) {
+    const project = createProject({ name: 'Test', root_path: '/test' }, deps)
+    handleCreateRole(
+      { name: 'Dev', description: 'Developer', scope: 'user' },
+      {},
+      deps,
+    )
+    const roles = (handleListRoles({}, deps) as { roles: { id: string }[] })
+      .roles
+    const teamResult = handleCreateTeam(
+      {
+        name: 'Team',
+        project_id: project.id,
+        members: [{ role_id: roles[0].id }],
+      },
+      {},
+      deps,
+    ) as { team: { id: string } }
+    return { project, teamId: teamResult.team.id }
+  }
+
+  it('calls spawnManager.spawnForRun when run is created and spawnManager is configured', () => {
+    const spawnForRun = vi.fn().mockResolvedValue({ run_id: 'x', agents: [] })
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({ spawnForRun })
+    const { project, teamId } = seedWithDeps(deps)
+
+    const result = handleCreateRun(
+      { name: 'Sprint', project_id: project.id, team_id: teamId },
+      {},
+      deps,
+    ) as { run: Run }
+
+    expect(spawnForRun).toHaveBeenCalledOnce()
+    // The argument should be a RunDto matching the created run
+    expect(spawnForRun.mock.calls[0][0].id).toBe(result.run.id)
+  })
+
+  it('does not error when spawnManager is not configured', () => {
+    const deps = createProjectChatDependencies()
+    const { project, teamId } = seedWithDeps(deps)
+
+    const set: { status?: number | string } = {}
+    const result = handleCreateRun(
+      { name: 'Sprint', project_id: project.id, team_id: teamId },
+      set,
+      deps,
+    ) as { run: Run }
+
+    expect(set.status).toBeUndefined()
+    expect(result.run.id).toBeDefined()
+  })
+
+  it('does not fail run creation if spawnManager.spawnForRun rejects', async () => {
+    const spawnForRun = vi.fn().mockRejectedValue(new Error('spawn failed'))
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({ spawnForRun })
+    const { project, teamId } = seedWithDeps(deps)
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const set: { status?: number | string } = {}
+    const result = handleCreateRun(
+      { name: 'Sprint', project_id: project.id, team_id: teamId },
+      set,
+      deps,
+    ) as { run: Run }
+
+    // Run creation still succeeds
+    expect(set.status).toBeUndefined()
+    expect(result.run.id).toBeDefined()
+
+    // Wait for the catch handler to run
+    await vi.waitFor(() => {
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[spawner] Failed to spawn agents'),
+        expect.any(Error),
+      )
+    })
+    consoleSpy.mockRestore()
+  })
+})
+
+describe('auto-stop on run completion', () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  function seedRunWithPhases(
+    deps: ReturnType<typeof createProjectChatDependencies>,
+    phases: Array<{ name: string; approval_required?: boolean }>,
+  ) {
+    const project = createProject({ name: 'Test', root_path: '/test' }, deps)
+    handleCreateRole(
+      { name: 'Dev', description: 'Developer', scope: 'user' },
+      {},
+      deps,
+    )
+    const roles = (handleListRoles({}, deps) as { roles: { id: string }[] })
+      .roles
+    const teamResult = handleCreateTeam(
+      {
+        name: 'Team',
+        project_id: project.id,
+        members: [{ role_id: roles[0].id }],
+      },
+      {},
+      deps,
+    ) as { team: { id: string } }
+    const runResult = handleCreateRun(
+      {
+        name: 'Sprint',
+        project_id: project.id,
+        team_id: teamResult.team.id,
+        phases,
+      },
+      {},
+      deps,
+    ) as {
+      run: {
+        id: string
+        phases: Array<{ id: string; name: string; status: string }>
+        status: string
+      }
+    }
+    return { project, run: runResult.run }
+  }
+
+  it('calls spawnManager.stopRun when run completes via advance', () => {
+    const stopRun = vi.fn().mockResolvedValue(undefined)
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({ stopRun })
+    const { run } = seedRunWithPhases(deps, [{ name: 'Only Phase' }])
+
+    // Advancing the only phase completes the run
+    const result = handleAdvanceRun(
+      run.id,
+      { action: 'advance' },
+      {},
+      deps,
+    ) as { run: { status: string } }
+
+    expect(result.run.status).toBe('completed')
+    expect(stopRun).toHaveBeenCalledWith(run.id)
+  })
+
+  it('does not call spawnManager.stopRun when advance does not complete the run', () => {
+    const stopRun = vi.fn().mockResolvedValue(undefined)
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({ stopRun })
+    const { run } = seedRunWithPhases(deps, [
+      { name: 'Phase 1' },
+      { name: 'Phase 2' },
+    ])
+
+    const result = handleAdvanceRun(
+      run.id,
+      { action: 'advance' },
+      {},
+      deps,
+    ) as { run: { status: string } }
+
+    expect(result.run.status).toBe('active')
+    expect(stopRun).not.toHaveBeenCalled()
+  })
+
+  it('calls spawnManager.stopRun when run completes via approval', () => {
+    const stopRun = vi.fn().mockResolvedValue(undefined)
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({ stopRun })
+    const { run } = seedRunWithPhases(deps, [
+      { name: 'Only Phase', approval_required: true },
+    ])
+
+    // Advance to pending_approval
+    handleAdvanceRun(run.id, { action: 'advance' }, {}, deps)
+
+    // Approve completes the last phase, completing the run
+    const result = handleApproveRun(
+      run.id,
+      { decision: 'approved' },
+      {},
+      deps,
+    ) as { run: { status: string } }
+
+    expect(result.run.status).toBe('completed')
+    expect(stopRun).toHaveBeenCalledWith(run.id)
+  })
+
+  it('does not call spawnManager.stopRun when approval does not complete the run', () => {
+    const stopRun = vi.fn().mockResolvedValue(undefined)
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({ stopRun })
+    const { run } = seedRunWithPhases(deps, [
+      { name: 'Phase 1', approval_required: true },
+      { name: 'Phase 2' },
+    ])
+
+    // Advance to pending_approval
+    handleAdvanceRun(run.id, { action: 'advance' }, {}, deps)
+
+    // Approve moves to next phase but doesn't complete
+    const result = handleApproveRun(
+      run.id,
+      { decision: 'approved' },
+      {},
+      deps,
+    ) as { run: { status: string } }
+
+    expect(result.run.status).toBe('active')
+    expect(stopRun).not.toHaveBeenCalled()
+  })
+
+  it('does not fail advance if spawnManager.stopRun rejects', async () => {
+    const stopRun = vi.fn().mockRejectedValue(new Error('stop failed'))
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({ stopRun })
+    const { run } = seedRunWithPhases(deps, [{ name: 'Only Phase' }])
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const set: { status?: number | string } = {}
+    const result = handleAdvanceRun(
+      run.id,
+      { action: 'advance' },
+      set,
+      deps,
+    ) as { run: { status: string } }
+
+    expect(result.run.status).toBe('completed')
+
+    await vi.waitFor(() => {
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[spawner] Failed to stop agents'),
+        expect.any(Error),
+      )
+    })
+    consoleSpy.mockRestore()
+  })
+
+  it('does not fail approve if spawnManager.stopRun rejects', async () => {
+    const stopRun = vi.fn().mockRejectedValue(new Error('stop failed'))
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({ stopRun })
+    const { run } = seedRunWithPhases(deps, [
+      { name: 'Only Phase', approval_required: true },
+    ])
+
+    handleAdvanceRun(run.id, { action: 'advance' }, {}, deps)
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const set: { status?: number | string } = {}
+    const result = handleApproveRun(
+      run.id,
+      { decision: 'approved' },
+      set,
+      deps,
+    ) as { run: { status: string } }
+
+    expect(result.run.status).toBe('completed')
+
+    await vi.waitFor(() => {
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[spawner] Failed to stop agents'),
+        expect.any(Error),
+      )
+    })
+    consoleSpy.mockRestore()
+  })
+
+  it('does not call stopRun when rejection keeps run active', () => {
+    const stopRun = vi.fn().mockResolvedValue(undefined)
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({ stopRun })
+    const { run } = seedRunWithPhases(deps, [
+      { name: 'Phase 1', approval_required: true },
+    ])
+
+    handleAdvanceRun(run.id, { action: 'advance' }, {}, deps)
+
+    const result = handleApproveRun(
+      run.id,
+      { decision: 'rejected' },
+      {},
+      deps,
+    ) as { run: { status: string } }
+
+    expect(result.run.status).toBe('active')
+    expect(stopRun).not.toHaveBeenCalled()
+  })
+})
+
+describe('agent spawn Elysia route adapters', () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  it('delegates GET /runs/:id/agents to handleGetRunAgents', () => {
+    const deps = createProjectChatDependencies()
+    const handlers = createRouteHandlers(deps)
+    const set: { status?: number | string } = {}
+
+    const result = handlers.runs.agents.get({ params: { id: 'run-1' }, set })
+
+    expect(set.status).toBe(501)
+    expect(result).toEqual({ error: 'Agent spawning not configured' })
+  })
+
+  it('delegates POST /runs/:id/agents/spawn to handleSpawnRunAgents', async () => {
+    const deps = createProjectChatDependencies()
+    const handlers = createRouteHandlers(deps)
+    const set: { status?: number | string } = {}
+
+    const result = await handlers.runs.agents.spawn({
+      params: { id: 'run-1' },
+      set,
+    })
+
+    expect(set.status).toBe(501)
+    expect(result).toEqual({ error: 'Agent spawning not configured' })
+  })
+
+  it('delegates POST /runs/:id/agents/stop to handleStopRunAgents', async () => {
+    const deps = createProjectChatDependencies()
+    const handlers = createRouteHandlers(deps)
+    const set: { status?: number | string } = {}
+
+    const result = await handlers.runs.agents.stop({
+      params: { id: 'run-1' },
+      set,
+    })
+
+    expect(set.status).toBe(501)
+    expect(result).toEqual({ error: 'Agent spawning not configured' })
+  })
+
+  it('delegates to spawnManager when configured', () => {
+    const spawnStatus = {
+      run_id: 'run-1',
+      agents: [
+        {
+          role_id: 'r1',
+          agent_name: 'dev',
+          runtime: 'claude' as const,
+          status: 'running' as const,
+          started_at: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    }
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({
+      getSpawnStatus: vi.fn().mockReturnValue(spawnStatus),
+    })
+    const handlers = createRouteHandlers(deps)
+    const set: { status?: number | string } = {}
+
+    const result = handlers.runs.agents.get({ params: { id: 'run-1' }, set })
+
+    expect(set.status).toBeUndefined()
+    expect(result).toEqual(spawnStatus)
+  })
+})
+
+// ── Project agent spawn route handler tests ──────────────────────────────
+
+describe('handleSpawnProjectAgent', () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  it('returns 501 when no spawnManager is configured', async () => {
+    const deps = createProjectChatDependencies()
+    const set: { status?: number | string } = {}
+
+    const result = await handleSpawnProjectAgent(
+      deps,
+      'proj-1',
+      { role_id: 'r1' },
+      set,
+    )
+
+    expect(set.status).toBe(501)
+    expect(result).toEqual({ error: 'Agent spawning not configured' })
+  })
+
+  it('returns 404 for missing project', async () => {
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager()
+    const set: { status?: number | string } = {}
+
+    const result = await handleSpawnProjectAgent(
+      deps,
+      'nonexistent',
+      { role_id: 'r1' },
+      set,
+    )
+
+    expect(set.status).toBe(404)
+    expect(result).toEqual({ error: 'project "nonexistent" was not found' })
+  })
+
+  it('returns 404 for missing role', async () => {
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager()
+    const project = createProject({ name: 'Test', root_path: '/test' }, deps)
+    const set: { status?: number | string } = {}
+
+    const result = await handleSpawnProjectAgent(
+      deps,
+      project.id,
+      { role_id: 'nonexistent' },
+      set,
+    )
+
+    expect(set.status).toBe(404)
+    expect(result).toEqual({ error: 'role "nonexistent" was not found' })
+  })
+
+  it('returns 400 for role without agent_config', async () => {
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager()
+    const project = createProject({ name: 'Test', root_path: '/test' }, deps)
+    handleCreateRole(
+      { name: 'Human', description: 'A human role', scope: 'user' },
+      {},
+      deps,
+    )
+    const roles = (handleListRoles({}, deps) as { roles: { id: string }[] })
+      .roles
+    const set: { status?: number | string } = {}
+
+    const result = await handleSpawnProjectAgent(
+      deps,
+      project.id,
+      { role_id: roles[0].id },
+      set,
+    )
+
+    expect(set.status).toBe(400)
+    expect(result).toEqual({
+      error: 'Role does not have agent configuration',
+    })
+  })
+
+  it('spawns agent for valid project and role', async () => {
+    const deps = createProjectChatDependencies()
+    const project = createProject({ name: 'Test', root_path: '/test' }, deps)
+    handleCreateRole(
+      {
+        name: 'Dev',
+        description: 'Developer',
+        scope: 'user',
+        agent_config: {
+          runtime: 'claude',
+          system_prompt: 'Be helpful',
+          model: 'claude-sonnet',
+        },
+      },
+      {},
+      deps,
+    )
+    const roles = (handleListRoles({}, deps) as { roles: { id: string }[] })
+      .roles
+
+    const spawnResult = {
+      role_id: roles[0].id,
+      agent_name: 'dev',
+      runtime: 'claude' as const,
+      status: 'starting' as const,
+      started_at: '2026-01-01T00:00:00.000Z',
+    }
+    const spawnForProject = vi.fn().mockResolvedValue(spawnResult)
+    deps.spawnManager = createMockSpawnManager({ spawnForProject })
+    const set: { status?: number | string } = {}
+
+    const result = await handleSpawnProjectAgent(
+      deps,
+      project.id,
+      { role_id: roles[0].id },
+      set,
+    )
+
+    expect(set.status).toBeUndefined()
+    expect(spawnForProject).toHaveBeenCalledWith(
+      project.id,
+      expect.objectContaining({
+        role_id: roles[0].id,
+        role_name: 'Dev',
+        role_description: 'Developer',
+        agent_config: {
+          runtime: 'claude',
+          system_prompt: 'Be helpful',
+          model: 'claude-sonnet',
+        },
+      }),
+    )
+    expect(result).toEqual(spawnResult)
+  })
+})
+
+describe('handleGetProjectAgents', () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  it('returns 501 when no spawnManager is configured', () => {
+    const deps = createProjectChatDependencies()
+    const set: { status?: number | string } = {}
+
+    const result = handleGetProjectAgents(deps, 'proj-1', set)
+
+    expect(set.status).toBe(501)
+    expect(result).toEqual({ error: 'Agent spawning not configured' })
+  })
+
+  it('returns agents from spawnManager', () => {
+    const agents = [
+      {
+        role_id: 'r1',
+        agent_name: 'dev',
+        runtime: 'claude' as const,
+        status: 'running' as const,
+        started_at: '2026-01-01T00:00:00.000Z',
+      },
+    ]
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({
+      getProjectAgents: vi.fn().mockReturnValue(agents),
+    })
+    const set: { status?: number | string } = {}
+
+    const result = handleGetProjectAgents(deps, 'proj-1', set)
+
+    expect(set.status).toBeUndefined()
+    expect(result).toEqual({ agents })
+  })
+
+  it('returns empty agents for unknown project', () => {
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager()
+    const set: { status?: number | string } = {}
+
+    const result = handleGetProjectAgents(deps, 'unknown', set)
+
+    expect(set.status).toBeUndefined()
+    expect(result).toEqual({ agents: [] })
+  })
+})
+
+describe('project agent Elysia route adapters', () => {
+  beforeEach(() => {
+    resetState()
+  })
+
+  it('delegates POST /projects/:id/agents/spawn to handleSpawnProjectAgent', async () => {
+    const deps = createProjectChatDependencies()
+    const handlers = createRouteHandlers(deps)
+    const set: { status?: number | string } = {}
+
+    const result = await handlers.projects.agents.spawn({
+      params: { id: 'proj-1' },
+      body: { role_id: 'r1' },
+      set,
+    })
+
+    expect(set.status).toBe(501)
+    expect(result).toEqual({ error: 'Agent spawning not configured' })
+  })
+
+  it('delegates GET /projects/:id/agents to handleGetProjectAgents', () => {
+    const deps = createProjectChatDependencies()
+    const handlers = createRouteHandlers(deps)
+    const set: { status?: number | string } = {}
+
+    const result = handlers.projects.agents.get({
+      params: { id: 'proj-1' },
+      set,
+    })
+
+    expect(set.status).toBe(501)
+    expect(result).toEqual({ error: 'Agent spawning not configured' })
+  })
+
+  it('delegates to spawnManager when configured for project agents', () => {
+    const agents = [
+      {
+        role_id: 'r1',
+        agent_name: 'dev',
+        runtime: 'claude' as const,
+        status: 'running' as const,
+        started_at: '2026-01-01T00:00:00.000Z',
+      },
+    ]
+    const deps = createProjectChatDependencies()
+    deps.spawnManager = createMockSpawnManager({
+      getProjectAgents: vi.fn().mockReturnValue(agents),
+    })
+    const handlers = createRouteHandlers(deps)
+    const set: { status?: number | string } = {}
+
+    const result = handlers.projects.agents.get({
+      params: { id: 'proj-1' },
+      set,
+    })
+
+    expect(set.status).toBeUndefined()
+    expect(result).toEqual({ agents })
   })
 })

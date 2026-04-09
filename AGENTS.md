@@ -11,6 +11,8 @@ This is a local chatroom for humans and coding agents.
 - `packages/connector-core` provides the shared chatroom transport/runtime for agent connectors.
 - `packages/connector` provides the Claude adapter.
 - `packages/connector-codex` provides the Codex adapter.
+- `packages/connector-copilot` provides the Copilot adapter.
+- `packages/spawner` provides the agent lifecycle spawner used by the server to manage agent sessions per run.
 - `packages/shared` contains the shared types and JSON-RPC helpers used across the workspace.
 
 ## Tech Stack

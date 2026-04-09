@@ -1,5 +1,5 @@
 {
-  "name": "@chatroom/server",
+  "name": "@chatroom/connector-copilot",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -16,13 +16,9 @@
     "check:all": "bun run check:types && bun run check:test && bun run check:coverage && bun run check:lint && bun run check:format"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.97",
+    "@chatroom/connector-core": "workspace:*",
     "@chatroom/shared": "workspace:*",
-    "@chatroom/spawner": "workspace:*",
-    "@elysiajs/cors": "^1.4.1",
-    "@github/copilot-sdk": "^0.2.1",
-    "elysia": "^1.2.0",
-    "zod": "^4.0.0"
+    "@modelcontextprotocol/sdk": "^1.12.0"
   },
   "devDependencies": {
     "bun-types": "latest"

@@ -2,13 +2,15 @@
 
 Minimal chatroom for humans and coding agents.
 
-The project is split into six parts:
+The project is split into the following packages:
 
 - `packages/server`: Bun + Elysia backend that exposes the REST and WebSocket chatroom API.
 - `packages/web`: SvelteKit UI for joining the room, sending messages, and viewing members.
 - `packages/connector-core`: shared chatroom transport/runtime used by agent-specific connectors.
 - `packages/connector`: Claude adapter that forwards room activity through Claude channel notifications.
 - `packages/connector-codex`: Codex adapter that exposes MCP tools including `wait_for_events`.
+- `packages/connector-copilot`: Copilot adapter that exposes MCP tools including `wait_for_events`.
+- `packages/spawner`: agent lifecycle spawner that orchestrates agent session creation and teardown per run.
 - `packages/shared`: shared JSON-RPC and type definitions used by the other packages.
 
 ## Development
@@ -49,6 +51,12 @@ Run the Codex MCP connector:
 bun run dev:connector:codex
 ```
 
+Run the Copilot MCP connector:
+
+```sh
+bun run dev:connector:copilot
+```
+
 Start a Claude Code session with the preview channel enabled from the repo root:
 
 ```sh
@@ -72,6 +80,14 @@ codex mcp add chatroom -- bun ./packages/connector-codex/src/index.ts
 
 Inside Codex, call `connect_chat` first with a `project_id` unless the connector already has `CHATROOM_PROJECT_ID` configured, then use `wait_for_events` to receive project chat activity and `send_message` to reply. The default wait timeout is `30000ms`, and Codex MCP servers have a per-tool timeout budget that defaults to `60` seconds.
 
+To register the Copilot connector, add it to `~/.copilot/mcp-config.json` or run from within GitHub Copilot CLI:
+
+```sh
+/mcp add chatroom -- bun ./packages/connector-copilot/src/index.ts
+```
+
+Inside Copilot, call `connect_chat` first with a `project_id` unless the connector already has `CHATROOM_PROJECT_ID` configured, then use `wait_for_events` to receive project chat activity and `send_message` to reply.
+
 ## Useful Commands
 
 - `bun run check:all` - run the full workspace validation suite.
@@ -88,6 +104,8 @@ Inside Codex, call `connect_chat` first with a `project_id` unless the connector
 - `bun run check:connector-core` - run all checks for `packages/connector-core`.
 - `bun run check:connector` - run all checks for `packages/connector`.
 - `bun run check:connector-codex` - run all checks for `packages/connector-codex`.
+- `bun run check:connector-copilot` - run all checks for `packages/connector-copilot`.
+- `bun run check:spawner` - run all checks for `packages/spawner`.
 - `bun run check:web` - run all checks for `packages/web`.
 - `bun run --filter @chatroom/web build` - build the web app for production.
 - `bun run --filter @chatroom/web check:types` - run Svelte type checks.
@@ -99,6 +117,6 @@ Inside Codex, call `connect_chat` first with a `project_id` unless the connector
 
 - The backend listens on `http://localhost:3000` by default.
 - The web UI connects to `http://localhost:3000` and `ws://localhost:3000`.
-- `.mcp.json` remains Claude-specific in this phase. Codex setup is documented as a local `codex mcp add ...` command.
+- `.mcp.json` remains Claude-specific in this phase. Codex and Copilot setup is documented as local MCP registration commands.
 - Coverage is enforced at `100%` from fast `*.unit.test.ts` suites only. Component and integration tests run separately and do not contribute to the coverage gate.
 - Agent-facing protocol details and working rules live in [AGENTS.md](./AGENTS.md).
