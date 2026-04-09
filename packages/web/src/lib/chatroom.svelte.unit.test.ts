@@ -121,6 +121,21 @@ describe('createChatroomModel', () => {
 								name: 'alpha',
 								description: 'frontend agent',
 								channel_id: 'project-1',
+								runtime: {
+									runtime_id: 'claude',
+									runtime_version: null,
+									capabilities: {
+										can_stream_events: true,
+										can_use_tools: true,
+										can_manage_files: true,
+										can_execute_commands: true,
+									},
+								},
+							},
+							{
+								name: 'human-helper',
+								description: 'reviewer',
+								channel_id: 'project-1',
 							},
 						],
 					},
@@ -172,6 +187,21 @@ describe('createChatroomModel', () => {
 			{
 				name: 'alpha',
 				description: 'frontend agent',
+				channel_id: 'project-1',
+				runtime: {
+					runtime_id: 'claude',
+					runtime_version: null,
+					capabilities: {
+						can_stream_events: true,
+						can_use_tools: true,
+						can_manage_files: true,
+						can_execute_commands: true,
+					},
+				},
+			},
+			{
+				name: 'human-helper',
+				description: 'reviewer',
 				channel_id: 'project-1',
 			},
 		])
