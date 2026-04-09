@@ -491,3 +491,269 @@ describe('SpawnManager', () => {
     )
   })
 })
+
+describe('SpawnManager - spawnForProject', () => {
+  it('spawns a session with correct config', async () => {
+    const factory = vi.fn().mockImplementation(() => makeSession())
+
+    const manager = createSpawnManager({
+      serverUrl: 'http://localhost:3000',
+      sessionFactory: factory,
+    })
+
+    const result = await manager.spawnForProject('proj-1', {
+      role_id: 'r1',
+      role_name: 'Backend Agent',
+      role_description: 'Backend developer',
+      agent_config: {
+        runtime: 'claude',
+        system_prompt: 'Be helpful',
+        model: 'claude-sonnet',
+      },
+    })
+
+    expect(factory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtime: 'claude',
+        agentName: 'backend-agent',
+        roleDescription: 'Backend developer',
+        systemPrompt: 'Be helpful',
+        model: 'claude-sonnet',
+        projectId: 'proj-1',
+        runId: '',
+        serverUrl: 'http://localhost:3000',
+      }),
+    )
+
+    expect(result.role_id).toBe('r1')
+    expect(result.agent_name).toBe('backend-agent')
+    expect(result.runtime).toBe('claude')
+    expect(result.status).toBe('starting')
+    expect(result.started_at).toBeDefined()
+  })
+
+  it('derives agent name from role_name', async () => {
+    const factory = vi.fn().mockImplementation(() => makeSession())
+
+    const manager = createSpawnManager({
+      serverUrl: 'http://localhost:3000',
+      sessionFactory: factory,
+    })
+
+    const result = await manager.spawnForProject('proj-1', {
+      role_id: 'r1',
+      role_name: 'Frontend Developer',
+      role_description: 'Builds UIs',
+      agent_config: { runtime: 'claude', system_prompt: null, model: null },
+    })
+
+    expect(result.agent_name).toBe('frontend-developer')
+  })
+
+  it('derives unique names for duplicate role names in the same project', async () => {
+    const factory = vi.fn().mockImplementation(() => makeSession())
+
+    const manager = createSpawnManager({
+      serverUrl: 'http://localhost:3000',
+      sessionFactory: factory,
+    })
+
+    const member = {
+      role_id: 'r1',
+      role_name: 'Agent',
+      role_description: 'An agent',
+      agent_config: {
+        runtime: 'claude' as const,
+        system_prompt: null,
+        model: null,
+      },
+    }
+
+    const r1 = await manager.spawnForProject('proj-1', member)
+    const r2 = await manager.spawnForProject('proj-1', {
+      ...member,
+      role_id: 'r2',
+    })
+    const r3 = await manager.spawnForProject('proj-1', {
+      ...member,
+      role_id: 'r3',
+    })
+
+    expect(r1.agent_name).toBe('agent')
+    expect(r2.agent_name).toBe('agent-2')
+    expect(r3.agent_name).toBe('agent-3')
+  })
+
+  it('returns SpawnedAgentInfo with correct fields', async () => {
+    const factory = vi.fn().mockImplementation(() => makeSession())
+
+    const manager = createSpawnManager({
+      serverUrl: 'http://localhost:3000',
+      sessionFactory: factory,
+    })
+
+    const result = await manager.spawnForProject('proj-1', {
+      role_id: 'r1',
+      role_name: 'Dev',
+      role_description: 'Developer',
+      agent_config: {
+        runtime: 'copilot',
+        system_prompt: null,
+        model: 'gpt-4',
+      },
+    })
+
+    expect(result).toEqual({
+      role_id: 'r1',
+      agent_name: 'dev',
+      runtime: 'copilot',
+      status: 'starting',
+      started_at: expect.any(String),
+    })
+  })
+
+  it('handles start failures by marking as errored', async () => {
+    const factory = vi.fn().mockImplementation(() =>
+      makeSession({
+        start: vi.fn().mockRejectedValue(new Error('spawn failed')),
+      }),
+    )
+
+    const manager = createSpawnManager({
+      serverUrl: 'http://localhost:3000',
+      sessionFactory: factory,
+    })
+
+    const result = await manager.spawnForProject('proj-1', {
+      role_id: 'r1',
+      role_name: 'Broken Agent',
+      role_description: 'Will fail',
+      agent_config: { runtime: 'claude', system_prompt: null, model: null },
+    })
+
+    expect(result.status).toBe('errored')
+    expect(result.error).toBe('spawn failed')
+    expect(result.stopped_at).toBeDefined()
+  })
+
+  it('handles non-Error rejection reasons in start failures', async () => {
+    const factory = vi.fn().mockImplementation(() =>
+      makeSession({
+        start: vi.fn().mockRejectedValue('string error'),
+      }),
+    )
+
+    const manager = createSpawnManager({
+      serverUrl: 'http://localhost:3000',
+      sessionFactory: factory,
+    })
+
+    const result = await manager.spawnForProject('proj-1', {
+      role_id: 'r1',
+      role_name: 'Broken Agent',
+      role_description: 'Will fail',
+      agent_config: { runtime: 'claude', system_prompt: null, model: null },
+    })
+
+    expect(result.status).toBe('errored')
+    expect(result.error).toBe('string error')
+  })
+
+  it('converts null system_prompt and model to undefined in session config', async () => {
+    const factory = vi.fn().mockImplementation(() => makeSession())
+
+    const manager = createSpawnManager({
+      serverUrl: 'http://localhost:3000',
+      sessionFactory: factory,
+    })
+
+    await manager.spawnForProject('proj-1', {
+      role_id: 'r1',
+      role_name: 'Agent',
+      role_description: 'An agent',
+      agent_config: { runtime: 'claude', system_prompt: null, model: null },
+    })
+
+    expect(factory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        systemPrompt: undefined,
+        model: undefined,
+      }),
+    )
+  })
+
+  it('updates SpawnedAgentInfo when onStatusChange fires', async () => {
+    const sessions: Array<
+      AgentSession & { _fireStatusChange: (s: SpawnedAgentStatus) => void }
+    > = []
+    const factory = vi.fn().mockImplementation(() => {
+      const session = makeSession()
+      sessions.push(
+        session as AgentSession & {
+          _fireStatusChange: (s: SpawnedAgentStatus) => void
+        },
+      )
+      return session
+    })
+
+    const manager = createSpawnManager({
+      serverUrl: 'http://localhost:3000',
+      sessionFactory: factory,
+    })
+
+    await manager.spawnForProject('proj-1', {
+      role_id: 'r1',
+      role_name: 'Agent',
+      role_description: 'An agent',
+      agent_config: { runtime: 'claude', system_prompt: null, model: null },
+    })
+
+    sessions[0]._fireStatusChange('connected')
+    let agents = manager.getProjectAgents('proj-1')
+    expect(agents[0].status).toBe('connected')
+
+    sessions[0]._fireStatusChange('stopped')
+    agents = manager.getProjectAgents('proj-1')
+    expect(agents[0].status).toBe('stopped')
+    expect(agents[0].stopped_at).toBeDefined()
+  })
+})
+
+describe('SpawnManager - getProjectAgents', () => {
+  it('returns empty array for unknown project', () => {
+    const manager = createSpawnManager({
+      serverUrl: 'http://localhost:3000',
+      sessionFactory: vi.fn(),
+    })
+
+    expect(manager.getProjectAgents('unknown')).toEqual([])
+  })
+
+  it('returns agents for known project', async () => {
+    const factory = vi.fn().mockImplementation(() => makeSession())
+
+    const manager = createSpawnManager({
+      serverUrl: 'http://localhost:3000',
+      sessionFactory: factory,
+    })
+
+    await manager.spawnForProject('proj-1', {
+      role_id: 'r1',
+      role_name: 'Agent One',
+      role_description: 'First agent',
+      agent_config: { runtime: 'claude', system_prompt: null, model: null },
+    })
+
+    await manager.spawnForProject('proj-1', {
+      role_id: 'r2',
+      role_name: 'Agent Two',
+      role_description: 'Second agent',
+      agent_config: { runtime: 'copilot', system_prompt: null, model: null },
+    })
+
+    const agents = manager.getProjectAgents('proj-1')
+    expect(agents).toHaveLength(2)
+    expect(agents[0].agent_name).toBe('agent-one')
+    expect(agents[1].agent_name).toBe('agent-two')
+  })
+})

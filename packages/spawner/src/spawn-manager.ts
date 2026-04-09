@@ -1,4 +1,4 @@
-import type { Run, RunTeamSnapshotMember } from '@chatroom/shared'
+import type { AgentConfig, Run, RunTeamSnapshotMember } from '@chatroom/shared'
 import type {
   AgentSession,
   AgentSessionConfig,
@@ -15,11 +15,23 @@ export interface SpawnManagerConfig {
   sessionFactory: AgentSessionFactory
 }
 
+export interface ProjectAgentMember {
+  role_id: string
+  role_name: string
+  role_description: string
+  agent_config: AgentConfig
+}
+
 export interface SpawnManager {
   spawnForRun(run: Run): Promise<RunSpawnStatus>
   getSpawnStatus(runId: string): RunSpawnStatus | undefined
   stopRun(runId: string): Promise<void>
   stopAgent(runId: string, agentName: string): Promise<void>
+  spawnForProject(
+    projectId: string,
+    member: ProjectAgentMember,
+  ): Promise<SpawnedAgentInfo>
+  getProjectAgents(projectId: string): SpawnedAgentInfo[]
 }
 
 interface RunEntry {
@@ -39,8 +51,15 @@ function deriveAgentName(roleName: string, existingNames: Set<string>): string {
   return `${base}-${suffix}`
 }
 
+interface ProjectEntry {
+  sessions: Map<string, AgentSession>
+  info: Map<string, SpawnedAgentInfo>
+  usedNames: Set<string>
+}
+
 export function createSpawnManager(config: SpawnManagerConfig): SpawnManager {
   const runs = new Map<string, RunEntry>()
+  const projects = new Map<string, ProjectEntry>()
 
   function buildSpawnStatus(runId: string, entry: RunEntry): RunSpawnStatus {
     return {
@@ -182,6 +201,77 @@ export function createSpawnManager(config: SpawnManagerConfig): SpawnManager {
         info.status = 'stopped'
         info.stopped_at = new Date().toISOString()
       }
+    },
+
+    async spawnForProject(
+      projectId: string,
+      member: ProjectAgentMember,
+    ): Promise<SpawnedAgentInfo> {
+      let projectEntry = projects.get(projectId)
+      if (!projectEntry) {
+        projectEntry = {
+          sessions: new Map(),
+          info: new Map(),
+          usedNames: new Set(),
+        }
+        projects.set(projectId, projectEntry)
+      }
+
+      const agentName = deriveAgentName(
+        member.role_name,
+        projectEntry.usedNames,
+      )
+      projectEntry.usedNames.add(agentName)
+
+      const sessionConfig: AgentSessionConfig = {
+        runtime: member.agent_config.runtime,
+        agentName,
+        roleDescription: member.role_description,
+        systemPrompt: member.agent_config.system_prompt ?? undefined,
+        model: member.agent_config.model ?? undefined,
+        projectId,
+        runId: '',
+        serverUrl: config.serverUrl,
+      }
+
+      const session = config.sessionFactory(sessionConfig)
+
+      const info: SpawnedAgentInfo = {
+        role_id: member.role_id,
+        agent_name: agentName,
+        runtime: member.agent_config.runtime,
+        status: 'starting',
+        started_at: new Date().toISOString(),
+      }
+
+      projectEntry.sessions.set(agentName, session)
+      projectEntry.info.set(agentName, info)
+
+      session.onStatusChange((status: SpawnedAgentStatus) => {
+        const stored = projectEntry.info.get(agentName)!
+        stored.status = status
+        if (status === 'stopped' || status === 'errored') {
+          stored.stopped_at = new Date().toISOString()
+        }
+      })
+
+      try {
+        await session.start()
+      } catch (err) {
+        info.status = 'errored'
+        info.error = err instanceof Error ? err.message : String(err)
+        info.stopped_at = new Date().toISOString()
+      }
+
+      return info
+    },
+
+    getProjectAgents(projectId: string): SpawnedAgentInfo[] {
+      const projectEntry = projects.get(projectId)
+      if (!projectEntry) {
+        return []
+      }
+      return Array.from(projectEntry.info.values())
     },
   }
 }

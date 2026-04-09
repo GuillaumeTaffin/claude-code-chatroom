@@ -640,6 +640,61 @@ export async function handleStopRunAgents(
   return { stopped: true }
 }
 
+// ── Project agent spawn route handlers ───────────────────────────────────
+
+export async function handleSpawnProjectAgent(
+  dependencies: ProjectChatDependencies,
+  projectId: string,
+  body: { role_id: string },
+  set: { status?: number | string },
+) {
+  if (!dependencies.spawnManager) {
+    set.status = 501
+    return { error: 'Agent spawning not configured' }
+  }
+
+  const project = dependencies.projectInventory.getProjectById(projectId)
+  if (!project) {
+    set.status = 404
+    return { error: `project "${projectId}" was not found` }
+  }
+
+  const role = dependencies.roleInventory.getRoleById(body.role_id)
+  if (!role) {
+    set.status = 404
+    return { error: `role "${body.role_id}" was not found` }
+  }
+
+  if (!role.agentConfig) {
+    set.status = 400
+    return { error: 'Role does not have agent configuration' }
+  }
+
+  return dependencies.spawnManager.spawnForProject(projectId, {
+    role_id: role.id,
+    role_name: role.name,
+    role_description: role.description,
+    agent_config: {
+      runtime: role.agentConfig.runtime,
+      system_prompt: role.agentConfig.systemPrompt,
+      model: role.agentConfig.model,
+    },
+  })
+}
+
+export function handleGetProjectAgents(
+  dependencies: ProjectChatDependencies,
+  projectId: string,
+  set: { status?: number | string },
+) {
+  if (!dependencies.spawnManager) {
+    set.status = 501
+    return { error: 'Agent spawning not configured' }
+  }
+
+  return { agents: dependencies.spawnManager.getProjectAgents(projectId) }
+}
+
 // ── Workspace allocation route handlers ───────────────────────────────────
 
 export function handleCreateWorkspaceAllocation(
@@ -787,6 +842,28 @@ export function createRouteHandlers(
       },
       list() {
         return handleProjects(dependencies)
+      },
+      agents: {
+        spawn({
+          params,
+          body,
+          set,
+        }: {
+          params: { id: string }
+          body: { role_id: string }
+          set: { status?: number | string }
+        }) {
+          return handleSpawnProjectAgent(dependencies, params.id, body, set)
+        },
+        get({
+          params,
+          set,
+        }: {
+          params: { id: string }
+          set: { status?: number | string }
+        }) {
+          return handleGetProjectAgents(dependencies, params.id, set)
+        },
       },
     },
     connect({
@@ -1330,6 +1407,19 @@ export function createRoutes(
       }),
     })
     .post('/runs/:id/agents/stop', handlers.runs.agents.stop, {
+      params: t.Object({
+        id: t.String(),
+      }),
+    })
+    .post('/projects/:id/agents/spawn', handlers.projects.agents.spawn, {
+      params: t.Object({
+        id: t.String(),
+      }),
+      body: t.Object({
+        role_id: t.String(),
+      }),
+    })
+    .get('/projects/:id/agents', handlers.projects.agents.get, {
       params: t.Object({
         id: t.String(),
       }),
