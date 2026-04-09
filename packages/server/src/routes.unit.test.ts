@@ -594,6 +594,220 @@ describe('role route handlers', () => {
     expect(result).toEqual({ error: 'role "nonexistent" was not found' })
   })
 
+  it('creates a role with agent_config', () => {
+    const set: { status?: number } = {}
+
+    const result = handleCreateRole(
+      {
+        name: 'Claude Dev',
+        description: 'AI developer',
+        scope: 'user',
+        agent_config: {
+          runtime: 'claude',
+          system_prompt: 'You write code',
+          model: 'opus',
+        },
+      },
+      set,
+    ) as {
+      role: {
+        id: string
+        name: string
+        agent_config: {
+          runtime: string
+          system_prompt: string | null
+          model: string | null
+        } | null
+      }
+    }
+
+    expect(set.status).toBeUndefined()
+    expect(result.role.id).toMatch(UUID)
+    expect(result.role.name).toBe('Claude Dev')
+    expect(result.role.agent_config).toEqual({
+      runtime: 'claude',
+      system_prompt: 'You write code',
+      model: 'opus',
+    })
+  })
+
+  it('creates a role without agent_config (defaults to null)', () => {
+    const set: { status?: number } = {}
+
+    const result = handleCreateRole(
+      {
+        name: 'Human',
+        description: 'A human role',
+        scope: 'user',
+      },
+      set,
+    ) as {
+      role: {
+        agent_config: null
+      }
+    }
+
+    expect(set.status).toBeUndefined()
+    expect(result.role.agent_config).toBeNull()
+  })
+
+  it('rejects role creation with invalid runtime', () => {
+    const set: { status?: number } = {}
+
+    const result = handleCreateRole(
+      {
+        name: 'Bad Agent',
+        description: 'Bad runtime',
+        scope: 'user',
+        agent_config: {
+          runtime: 'invalid' as 'claude',
+          system_prompt: null,
+          model: null,
+        },
+      },
+      set,
+    )
+
+    expect(set.status).toBe(400)
+    expect(result).toEqual({
+      error: 'agent_config.runtime must be "claude" or "copilot"',
+    })
+  })
+
+  it('rejects role creation with empty runtime', () => {
+    const set: { status?: number } = {}
+
+    const result = handleCreateRole(
+      {
+        name: 'Bad Agent',
+        description: 'Empty runtime',
+        scope: 'user',
+        agent_config: {
+          runtime: '' as 'claude',
+          system_prompt: null,
+          model: null,
+        },
+      },
+      set,
+    )
+
+    expect(set.status).toBe(400)
+    expect(result).toEqual({
+      error: 'agent_config.runtime must be "claude" or "copilot"',
+    })
+  })
+
+  it('updates a role with agent_config', () => {
+    const created = handleCreateRole(
+      { name: 'Human', description: 'A human', scope: 'user' },
+      {},
+    ) as { role: { id: string } }
+    const set: { status?: number } = {}
+
+    const result = handleUpdateRole(
+      created.role.id,
+      {
+        agent_config: {
+          runtime: 'copilot',
+          system_prompt: null,
+          model: 'gpt-4',
+        },
+      },
+      set,
+    ) as {
+      role: {
+        agent_config: {
+          runtime: string
+          system_prompt: string | null
+          model: string | null
+        } | null
+      }
+    }
+
+    expect(set.status).toBeUndefined()
+    expect(result.role.agent_config).toEqual({
+      runtime: 'copilot',
+      system_prompt: null,
+      model: 'gpt-4',
+    })
+  })
+
+  it('clears agent_config with null', () => {
+    const created = handleCreateRole(
+      {
+        name: 'Agent',
+        description: 'An agent',
+        scope: 'user',
+        agent_config: {
+          runtime: 'claude',
+          system_prompt: null,
+          model: null,
+        },
+      },
+      {},
+    ) as { role: { id: string } }
+    const set: { status?: number } = {}
+
+    const result = handleUpdateRole(
+      created.role.id,
+      { agent_config: null },
+      set,
+    ) as { role: { agent_config: null } }
+
+    expect(set.status).toBeUndefined()
+    expect(result.role.agent_config).toBeNull()
+  })
+
+  it('rejects update with invalid runtime', () => {
+    const created = handleCreateRole(
+      { name: 'Agent', description: 'An agent', scope: 'user' },
+      {},
+    ) as { role: { id: string } }
+    const set: { status?: number } = {}
+
+    const result = handleUpdateRole(
+      created.role.id,
+      {
+        agent_config: {
+          runtime: 'bad' as 'claude',
+          system_prompt: null,
+          model: null,
+        },
+      },
+      set,
+    )
+
+    expect(set.status).toBe(400)
+    expect(result).toEqual({
+      error: 'agent_config.runtime must be "claude" or "copilot"',
+    })
+  })
+
+  it('rejects update with empty runtime', () => {
+    const created = handleCreateRole(
+      { name: 'Agent', description: 'An agent', scope: 'user' },
+      {},
+    ) as { role: { id: string } }
+    const set: { status?: number } = {}
+
+    const result = handleUpdateRole(
+      created.role.id,
+      {
+        agent_config: {
+          runtime: '' as 'claude',
+          system_prompt: null,
+          model: null,
+        },
+      },
+      set,
+    )
+
+    expect(set.status).toBe(400)
+    expect(result).toEqual({
+      error: 'agent_config.runtime must be "claude" or "copilot"',
+    })
+  })
+
   it('exposes role Elysia route adapters that delegate to handlers', () => {
     const created = routeHandlers.roles.create({
       body: {

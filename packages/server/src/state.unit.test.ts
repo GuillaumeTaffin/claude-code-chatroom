@@ -18,6 +18,9 @@ import {
   getRoom,
   getRunRoom,
   listProjects,
+  mapAgentConfigRecordToDomain,
+  mapAgentConfigToDto,
+  mapAgentConfigToRecord,
   mapApprovalRecordToDomain,
   mapApprovalToDto,
   mapCreateWorkspaceAllocationDtoToDomain,
@@ -595,6 +598,7 @@ describe('role inventory', () => {
       description: 'Designs systems',
       scope: 'project',
       project_id: 'proj-1',
+      agent_config: null,
     })
 
     expect(domain).toEqual({
@@ -603,6 +607,7 @@ describe('role inventory', () => {
       description: 'Designs systems',
       scope: 'project',
       projectId: 'proj-1',
+      agentConfig: null,
     })
 
     expect(mapRoleToDto(domain)).toEqual({
@@ -611,6 +616,7 @@ describe('role inventory', () => {
       description: 'Designs systems',
       scope: 'project',
       project_id: 'proj-1',
+      agent_config: null,
     })
   })
 
@@ -621,10 +627,129 @@ describe('role inventory', () => {
       description: 'Reviews code',
       scope: 'user',
       project_id: null,
+      agent_config: null,
     })
 
     expect(domain.projectId).toBeNull()
+    expect(domain.agentConfig).toBeNull()
     expect(mapRoleToDto(domain).project_id).toBeNull()
+    expect(mapRoleToDto(domain).agent_config).toBeNull()
+  })
+
+  it('maps role with agent_config', () => {
+    const domain = mapRoleRecordToDomain({
+      id: 'role-3',
+      name: 'Claude Agent',
+      description: 'AI agent',
+      scope: 'user',
+      project_id: null,
+      agent_config: {
+        runtime: 'claude',
+        system_prompt: 'You are a helpful assistant',
+        model: 'opus',
+      },
+    })
+
+    expect(domain.agentConfig).toEqual({
+      runtime: 'claude',
+      systemPrompt: 'You are a helpful assistant',
+      model: 'opus',
+    })
+
+    expect(mapRoleToDto(domain).agent_config).toEqual({
+      runtime: 'claude',
+      system_prompt: 'You are a helpful assistant',
+      model: 'opus',
+    })
+  })
+
+  it('creates a role with agent_config', () => {
+    const role = inventory.createRole({
+      name: 'Claude Agent',
+      description: 'AI agent',
+      scope: 'user',
+      agentConfig: {
+        runtime: 'claude',
+        systemPrompt: 'You are a helpful assistant',
+        model: 'opus',
+      },
+    })
+
+    expect(role.agentConfig).toEqual({
+      runtime: 'claude',
+      systemPrompt: 'You are a helpful assistant',
+      model: 'opus',
+    })
+  })
+
+  it('creates a role without agent_config (defaults to null)', () => {
+    const role = inventory.createRole({
+      name: 'Human',
+      description: 'A human role',
+      scope: 'user',
+    })
+
+    expect(role.agentConfig).toBeNull()
+  })
+
+  it('updates a role agent_config (set)', () => {
+    const created = inventory.createRole({
+      name: 'Human',
+      description: 'A human role',
+      scope: 'user',
+    })
+
+    const updated = inventory.updateRole(created.id, {
+      agentConfig: {
+        runtime: 'copilot',
+        systemPrompt: null,
+        model: null,
+      },
+    })
+
+    expect(updated!.agentConfig).toEqual({
+      runtime: 'copilot',
+      systemPrompt: null,
+      model: null,
+    })
+  })
+
+  it('updates a role agent_config (clear)', () => {
+    const created = inventory.createRole({
+      name: 'Agent',
+      description: 'An agent',
+      scope: 'user',
+      agentConfig: {
+        runtime: 'claude',
+        systemPrompt: null,
+        model: null,
+      },
+    })
+
+    const updated = inventory.updateRole(created.id, { agentConfig: null })
+
+    expect(updated!.agentConfig).toBeNull()
+  })
+
+  it('leaves agent_config unchanged when agentConfig is undefined in update', () => {
+    const created = inventory.createRole({
+      name: 'Agent',
+      description: 'An agent',
+      scope: 'user',
+      agentConfig: {
+        runtime: 'claude',
+        systemPrompt: 'prompt',
+        model: 'opus',
+      },
+    })
+
+    const updated = inventory.updateRole(created.id, { name: 'Renamed Agent' })
+
+    expect(updated!.agentConfig).toEqual({
+      runtime: 'claude',
+      systemPrompt: 'prompt',
+      model: 'opus',
+    })
   })
 })
 
@@ -1058,7 +1183,12 @@ describe('run inventory', () => {
     projectInventory = new InMemoryProjectInventory()
     roleInventory = new InMemoryRoleInventory()
     teamInventory = new InMemoryTeamInventory(projectInventory, roleInventory)
-    runInventory = new InMemoryRunInventory(projectInventory, teamInventory)
+    runInventory = new InMemoryRunInventory(
+      projectInventory,
+      teamInventory,
+      undefined,
+      roleInventory,
+    )
   })
 
   function seedProject(name = 'Test Project') {
@@ -1104,7 +1234,14 @@ describe('run inventory', () => {
     expect(run.teamSnapshot).toEqual({
       teamId: team.id,
       teamName: 'Alpha Team',
-      members: [{ roleId: role.id }],
+      members: [
+        {
+          roleId: role.id,
+          roleName: 'Architect',
+          roleDescription: 'Architect description',
+          agentConfig: null,
+        },
+      ],
     })
   })
 
@@ -1150,7 +1287,14 @@ describe('run inventory', () => {
 
     // The run's snapshot should remain unchanged
     expect(run.teamSnapshot.teamName).toBe('Alpha Team')
-    expect(run.teamSnapshot.members).toEqual([{ roleId: role.id }])
+    expect(run.teamSnapshot.members).toEqual([
+      {
+        roleId: role.id,
+        roleName: 'Architect',
+        roleDescription: 'Architect description',
+        agentConfig: null,
+      },
+    ])
   })
 
   it('rejects run creation when project does not exist', () => {
@@ -1326,7 +1470,14 @@ describe('run inventory', () => {
       team_snapshot: {
         team_id: 'team-1',
         team_name: 'Alpha Team',
-        members: [{ role_id: 'role-1' }],
+        members: [
+          {
+            role_id: 'role-1',
+            role_name: 'Architect',
+            role_description: 'Designs systems',
+            agent_config: null,
+          },
+        ],
       },
       channel_id: 'channel-1',
       status: 'active',
@@ -1344,7 +1495,14 @@ describe('run inventory', () => {
       teamSnapshot: {
         teamId: 'team-1',
         teamName: 'Alpha Team',
-        members: [{ roleId: 'role-1' }],
+        members: [
+          {
+            roleId: 'role-1',
+            roleName: 'Architect',
+            roleDescription: 'Designs systems',
+            agentConfig: null,
+          },
+        ],
       },
       channelId: 'channel-1',
       status: 'active',
@@ -1362,7 +1520,14 @@ describe('run inventory', () => {
       team_snapshot: {
         team_id: 'team-1',
         team_name: 'Alpha Team',
-        members: [{ role_id: 'role-1' }],
+        members: [
+          {
+            role_id: 'role-1',
+            role_name: 'Architect',
+            role_description: 'Designs systems',
+            agent_config: null,
+          },
+        ],
       },
       channel_id: 'channel-1',
       status: 'active',
@@ -1371,6 +1536,153 @@ describe('run inventory', () => {
       approval_required: false,
       approvals: [],
       created_at: '2026-04-07T00:00:00.000Z',
+    })
+  })
+
+  it('enriches run team snapshot with role details and agent_config', () => {
+    const project = seedProject()
+    const agentRole = roleInventory.createRole({
+      name: 'Claude Dev',
+      description: 'An AI developer',
+      scope: 'user',
+      agentConfig: {
+        runtime: 'claude',
+        systemPrompt: 'You write code',
+        model: 'opus',
+      },
+    })
+    const humanRole = seedRole('Human Lead')
+    const team = seedTeam(project.id, [agentRole.id, humanRole.id])
+
+    const run = runInventory.createRun({
+      name: 'Feature Sprint',
+      projectId: project.id,
+      teamId: team.id,
+    })
+
+    expect(run.teamSnapshot.members).toEqual([
+      {
+        roleId: agentRole.id,
+        roleName: 'Claude Dev',
+        roleDescription: 'An AI developer',
+        agentConfig: {
+          runtime: 'claude',
+          systemPrompt: 'You write code',
+          model: 'opus',
+        },
+      },
+      {
+        roleId: humanRole.id,
+        roleName: 'Human Lead',
+        roleDescription: 'Human Lead description',
+        agentConfig: null,
+      },
+    ])
+  })
+
+  it('maps run snapshot with enriched members including agent_config', () => {
+    const domain = mapRunRecordToDomain({
+      id: 'run-2',
+      name: 'Sprint 2',
+      project_id: 'proj-1',
+      team_snapshot: {
+        team_id: 'team-1',
+        team_name: 'Alpha Team',
+        members: [
+          {
+            role_id: 'role-1',
+            role_name: 'Claude Dev',
+            role_description: 'AI dev',
+            agent_config: {
+              runtime: 'copilot',
+              system_prompt: null,
+              model: 'gpt-4',
+            },
+          },
+        ],
+      },
+      channel_id: 'channel-2',
+      status: 'active',
+      phases: [],
+      current_phase_id: null,
+      approval_required: false,
+      approvals: [],
+      created_at: '2026-04-07T00:00:00.000Z',
+    })
+
+    expect(domain.teamSnapshot.members[0]).toEqual({
+      roleId: 'role-1',
+      roleName: 'Claude Dev',
+      roleDescription: 'AI dev',
+      agentConfig: {
+        runtime: 'copilot',
+        systemPrompt: null,
+        model: 'gpt-4',
+      },
+    })
+
+    const dto = mapRunToDto(domain)
+    expect(dto.team_snapshot.members[0]).toEqual({
+      role_id: 'role-1',
+      role_name: 'Claude Dev',
+      role_description: 'AI dev',
+      agent_config: {
+        runtime: 'copilot',
+        system_prompt: null,
+        model: 'gpt-4',
+      },
+    })
+  })
+
+  it('maps agent config helpers correctly', () => {
+    expect(mapAgentConfigRecordToDomain(null)).toBeNull()
+    expect(
+      mapAgentConfigRecordToDomain({
+        runtime: 'claude',
+        system_prompt: 'prompt',
+        model: 'opus',
+      }),
+    ).toEqual({ runtime: 'claude', systemPrompt: 'prompt', model: 'opus' })
+
+    expect(mapAgentConfigToRecord(null)).toBeNull()
+    expect(
+      mapAgentConfigToRecord({
+        runtime: 'copilot',
+        systemPrompt: null,
+        model: null,
+      }),
+    ).toEqual({ runtime: 'copilot', system_prompt: null, model: null })
+
+    expect(mapAgentConfigToDto(null)).toBeNull()
+    expect(
+      mapAgentConfigToDto({
+        runtime: 'claude',
+        systemPrompt: 'hi',
+        model: 'opus',
+      }),
+    ).toEqual({ runtime: 'claude', system_prompt: 'hi', model: 'opus' })
+  })
+
+  it('falls back to empty strings when roleInventory is not provided', () => {
+    const localRunInventory = new InMemoryRunInventory(
+      projectInventory,
+      teamInventory,
+    )
+    const project = seedProject()
+    const role = seedRole('Architect')
+    const team = seedTeam(project.id, [role.id])
+
+    const run = localRunInventory.createRun({
+      name: 'Sprint',
+      projectId: project.id,
+      teamId: team.id,
+    })
+
+    expect(run.teamSnapshot.members[0]).toEqual({
+      roleId: role.id,
+      roleName: '',
+      roleDescription: '',
+      agentConfig: null,
     })
   })
 
@@ -1440,7 +1752,12 @@ describe('phase control', () => {
     projectInventory = new InMemoryProjectInventory()
     roleInventory = new InMemoryRoleInventory()
     teamInventory = new InMemoryTeamInventory(projectInventory, roleInventory)
-    runInventory = new InMemoryRunInventory(projectInventory, teamInventory)
+    runInventory = new InMemoryRunInventory(
+      projectInventory,
+      teamInventory,
+      undefined,
+      roleInventory,
+    )
   })
 
   function seedProject(name = 'Test Project') {
@@ -1833,7 +2150,12 @@ describe('workspace allocation inventory', () => {
     projectInventory = new InMemoryProjectInventory()
     roleInventory = new InMemoryRoleInventory()
     teamInventory = new InMemoryTeamInventory(projectInventory, roleInventory)
-    runInventory = new InMemoryRunInventory(projectInventory, teamInventory)
+    runInventory = new InMemoryRunInventory(
+      projectInventory,
+      teamInventory,
+      undefined,
+      roleInventory,
+    )
     allocationInventory = new InMemoryWorkspaceAllocationInventory(runInventory)
   })
 
@@ -2281,6 +2603,7 @@ describe('run inventory emits timeline events', () => {
       projectInventory,
       teamInventory,
       timelineInventory,
+      roleInventory,
     )
   })
 
@@ -2628,7 +2951,12 @@ describe('run creation with playbook', () => {
     projectInventory = new InMemoryProjectInventory()
     roleInventory = new InMemoryRoleInventory()
     teamInventory = new InMemoryTeamInventory(projectInventory, roleInventory)
-    runInventory = new InMemoryRunInventory(projectInventory, teamInventory)
+    runInventory = new InMemoryRunInventory(
+      projectInventory,
+      teamInventory,
+      undefined,
+      roleInventory,
+    )
   })
 
   function seedProject(name = 'Test Project') {

@@ -215,6 +215,17 @@ export function handleCreateRole(
     return { error: 'project_id must not be provided when scope is "user"' }
   }
 
+  if (body.agent_config) {
+    if (
+      !body.agent_config.runtime ||
+      (body.agent_config.runtime !== 'claude' &&
+        body.agent_config.runtime !== 'copilot')
+    ) {
+      set.status = 400
+      return { error: 'agent_config.runtime must be "claude" or "copilot"' }
+    }
+  }
+
   if (body.scope === 'project') {
     const project = dependencies.projectInventory.getProjectById(
       body.project_id!,
@@ -265,6 +276,17 @@ export function handleUpdateRole(
   set: { status?: number | string },
   dependencies: ProjectChatDependencies = defaultProjectChatDependencies,
 ) {
+  if (
+    body.agent_config !== undefined &&
+    body.agent_config !== null &&
+    (!body.agent_config.runtime ||
+      (body.agent_config.runtime !== 'claude' &&
+        body.agent_config.runtime !== 'copilot'))
+  ) {
+    set.status = 400
+    return { error: 'agent_config.runtime must be "claude" or "copilot"' }
+  }
+
   const role = dependencies.roleInventory.updateRole(
     id,
     mapUpdateRoleDtoToDomain(body),
@@ -731,6 +753,11 @@ export function createRouteHandlers(
           description: string
           scope: string
           project_id?: string
+          agent_config?: {
+            runtime: string
+            system_prompt: string | null
+            model: string | null
+          }
         }
         set: { status?: number | string }
       }) {
@@ -754,10 +781,23 @@ export function createRouteHandlers(
         set,
       }: {
         params: { id: string }
-        body: UpdateRoleRequest
+        body: {
+          name?: string
+          description?: string
+          agent_config?: {
+            runtime: string
+            system_prompt: string | null
+            model: string | null
+          } | null
+        }
         set: { status?: number | string }
       }) {
-        return handleUpdateRole(params.id, body, set, dependencies)
+        return handleUpdateRole(
+          params.id,
+          body as UpdateRoleRequest,
+          set,
+          dependencies,
+        )
       },
       delete({
         params,
@@ -997,6 +1037,13 @@ export function createRoutes(
         description: t.String(),
         scope: t.String(),
         project_id: t.Optional(t.String()),
+        agent_config: t.Optional(
+          t.Object({
+            runtime: t.String(),
+            system_prompt: t.Union([t.String(), t.Null()]),
+            model: t.Union([t.String(), t.Null()]),
+          }),
+        ),
       }),
     })
     .get('/roles', handlers.roles.list, {
@@ -1017,6 +1064,16 @@ export function createRoutes(
       body: t.Object({
         name: t.Optional(t.String()),
         description: t.Optional(t.String()),
+        agent_config: t.Optional(
+          t.Union([
+            t.Object({
+              runtime: t.String(),
+              system_prompt: t.Union([t.String(), t.Null()]),
+              model: t.Union([t.String(), t.Null()]),
+            }),
+            t.Null(),
+          ]),
+        ),
       }),
     })
     .delete('/roles/:id', handlers.roles.delete, {

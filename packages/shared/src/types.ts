@@ -36,12 +36,21 @@ export interface Project {
 
 export type RoleScope = 'user' | 'project'
 
+export type AgentRuntime = 'claude' | 'copilot'
+
+export interface AgentConfig {
+  runtime: AgentRuntime
+  system_prompt: string | null
+  model: string | null
+}
+
 export interface Role {
   id: string
   name: string
   description: string
   scope: RoleScope
   project_id: string | null
+  agent_config: AgentConfig | null
 }
 
 export interface CreateRoleRequest {
@@ -49,6 +58,7 @@ export interface CreateRoleRequest {
   description: string
   scope: RoleScope
   project_id?: string
+  agent_config?: AgentConfig
 }
 
 export interface CreateRoleResponse {
@@ -58,6 +68,7 @@ export interface CreateRoleResponse {
 export interface UpdateRoleRequest {
   name?: string
   description?: string
+  agent_config?: AgentConfig | null
 }
 
 export interface UpdateRoleResponse {
@@ -175,10 +186,17 @@ export interface ApprovalRecord {
   decided_at: string
 }
 
+export interface RunTeamSnapshotMember {
+  role_id: string
+  role_name: string
+  role_description: string
+  agent_config: AgentConfig | null
+}
+
 export interface RunTeamSnapshot {
   team_id: string
   team_name: string
-  members: TeamMember[]
+  members: RunTeamSnapshotMember[]
 }
 
 export interface Run {
