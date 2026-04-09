@@ -18,3 +18,12 @@ export {
   buildPrompt,
 } from './claude-adapter.js'
 export type { ClaudeAgentDependencies } from './claude-adapter.js'
+export {
+  createCopilotSession,
+  createCopilotSessionFactory,
+} from './copilot-adapter.js'
+export type {
+  CopilotAgentDependencies,
+  CopilotClientHandle,
+  CopilotSessionHandle,
+} from './copilot-adapter.js'
